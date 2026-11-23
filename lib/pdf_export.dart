@@ -7,7 +7,12 @@ import 'package:share_plus/share_plus.dart';
 
 /// Exports Arabic (RTL, Amiri font) text as a PDF and opens the share sheet.
 /// v1 exports PDF only — DOCX export is deferred (see README).
+/// Throws on empty input or any generation/share failure; callers must
+/// catch and show the user an error instead of failing silently.
 Future<void> sharePdf(String fileName, String title, String body) async {
+  if (title.trim().isEmpty || body.trim().isEmpty) {
+    throw ArgumentError('sharePdf requires a non-empty title and body');
+  }
   final regular =
       pw.Font.ttf(await rootBundle.load('assets/fonts/Amiri-Regular.ttf'));
   final bold =
@@ -54,7 +59,8 @@ Future<void> sharePdf(String fileName, String title, String body) async {
     ),
   );
   final dir = await getTemporaryDirectory();
-  final safeName = fileName.replaceAll(RegExp(r'[^A-Za-z0-9_.-]'), '_');
+  var safeName = fileName.replaceAll(RegExp(r'[^A-Za-z0-9_.-]'), '_');
+  if (safeName.replaceAll('.', '').isEmpty) safeName = 'marasim.pdf';
   final file = File('${dir.path}/$safeName');
   await file.writeAsBytes(await doc.save());
   await Share.shareXFiles([XFile(file.path)], text: title);

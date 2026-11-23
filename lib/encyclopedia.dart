@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:share_plus/share_plus.dart';
+import 'app_state.dart';
 import 'assistant.dart';
 import 'db.dart';
 import 'widgets.dart';
@@ -51,7 +52,7 @@ class _CountriesPageState extends State<CountriesPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('موسوعة الدول')),
+      appBar: AppBar(title: Text(trc(context, 'countries'))),
       body: Column(
         children: [
           Padding(
@@ -59,7 +60,7 @@ class _CountriesPageState extends State<CountriesPage> {
             child: TextField(
               controller: _search,
               decoration: InputDecoration(
-                hintText: 'ابحث عن دولة أو عاصمة...',
+                hintText: trc(context, 'countries_search_hint'),
                 prefixIcon: const Icon(Icons.search),
                 suffixIcon: _search.text.isEmpty
                     ? null
@@ -78,8 +79,9 @@ class _CountriesPageState extends State<CountriesPage> {
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : _shown.isEmpty
-                    ? const EmptyState(
-                        icon: Icons.public_off, text: 'لا توجد دولة مطابقة للبحث.')
+                    ? EmptyState(
+                        icon: Icons.public_off,
+                        text: trc(context, 'countries_no_match'))
                     : ListView.builder(
                         itemCount: _shown.length,
                         itemBuilder: (ctx, i) {
@@ -94,7 +96,7 @@ class _CountriesPageState extends State<CountriesPage> {
                                   style: const TextStyle(
                                       fontWeight: FontWeight.bold)),
                               subtitle: Text(
-                                  '${c.nameEn} • العاصمة: ${c.capital}'),
+                                  '${c.nameEn} • ${trc(context, 'capital')}: ${c.capital}'),
                               trailing:
                                   const Icon(Icons.arrow_back_ios, size: 14),
                               onTap: () => Navigator.push(
@@ -138,13 +140,14 @@ class _CountryDetailPageState extends State<CountryDetailPage> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 20, color: AppColors.navy),
+          Icon(icon, size: 20, color: AppColors.gold),
           const SizedBox(width: 10),
           SizedBox(
               width: 110,
               child: Text(label,
-                  style: const TextStyle(
-                      fontWeight: FontWeight.bold, color: AppColors.navy))),
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: context.headingColor))),
           Expanded(child: Text(value, style: const TextStyle(height: 1.6))),
         ],
       ),
@@ -169,7 +172,7 @@ class _CountryDetailPageState extends State<CountryDetailPage> {
           IconButton(
             icon: const Icon(Icons.share),
             onPressed: () => Share.share(
-                '${c.nameAr} (${c.nameEn})\nالعاصمة: ${c.capital}\nاللغة: ${c.languages}\nالعملة: ${c.currency}\nالعيد الوطني: ${c.nationalDayName}'),
+                '${c.nameAr} (${c.nameEn})\n${trc(context, 'capital')}: ${c.capital}\n${trc(context, 'language')}: ${c.languages}\n${trc(context, 'currency')}: ${c.currency}\n${trc(context, 'national_day')}: ${c.nationalDayName}'),
           ),
         ],
       ),
@@ -185,9 +188,11 @@ class _CountryDetailPageState extends State<CountryDetailPage> {
                   const SizedBox(height: 6),
                   Text(c.nameAr,
                       style: const TextStyle(
-                          fontSize: 24, fontWeight: FontWeight.bold)),
+                          fontFamily: 'Amiri',
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold)),
                   Text(c.nameEn,
-                      style: const TextStyle(color: AppColors.stone)),
+                      style: TextStyle(color: context.mutedColor)),
                 ],
               ),
             ),
@@ -197,12 +202,12 @@ class _CountryDetailPageState extends State<CountryDetailPage> {
                 padding: const EdgeInsets.all(14),
                 child: Column(
                   children: [
-                    _row('العاصمة', c.capital, Icons.location_city),
-                    _row('اللغة الرسمية', c.languages, Icons.language),
-                    _row('العملة', c.currency, Icons.attach_money),
-                    _row('المنطقة الزمنية', c.timezones, Icons.schedule),
-                    _row('النظام السياسي', c.system, Icons.account_balance),
-                    _row('العيد الوطني',
+                    _row(trc(context, 'capital'), c.capital, Icons.location_city),
+                    _row(trc(context, 'language'), c.languages, Icons.language),
+                    _row(trc(context, 'currency'), c.currency, Icons.attach_money),
+                    _row(trc(context, 'timezone'), c.timezones, Icons.schedule),
+                    _row(trc(context, 'system'), c.system, Icons.account_balance),
+                    _row(trc(context, 'national_day'),
                         c.nationalDay == null
                             ? c.nationalDayName
                             : '${c.nationalDayName} (${c.nationalDay})',
@@ -212,7 +217,7 @@ class _CountryDetailPageState extends State<CountryDetailPage> {
               ),
             ),
             const SizedBox(height: 14),
-            const SectionHeader(title: 'المراسم والبروتوكول المحلي'),
+            SectionHeader(title: trc(context, 'country_protocol')),
             const SizedBox(height: 6),
             Card(
               child: Padding(
@@ -222,7 +227,7 @@ class _CountryDetailPageState extends State<CountryDetailPage> {
               ),
             ),
             const SizedBox(height: 14),
-            const SectionHeader(title: 'الألقاب والمخاطبات'),
+            SectionHeader(title: trc(context, 'country_titles')),
             const SizedBox(height: 6),
             Card(
               child: Padding(
@@ -260,14 +265,18 @@ class _ProtocolGuidePageState extends State<ProtocolGuidePage> {
   @override
   void initState() {
     super.initState();
-    Repo.i.sections().then((s) {
-      if (mounted) {
-        setState(() {
-          _sections = s;
-          _loading = false;
-        });
-      }
-    });
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    final s = await Repo.i.sections();
+    if (mounted) {
+      setState(() {
+        _sections = s;
+        _loading = false;
+      });
+    }
   }
 
   static const _icons = {
@@ -292,10 +301,17 @@ class _ProtocolGuidePageState extends State<ProtocolGuidePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('دليل البروتوكول الدولي')),
+      appBar: AppBar(title: Text(trc(context, 'guide_title'))),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : ListView.builder(
+          : _sections.isEmpty
+              ? EmptyState(
+                  icon: Icons.error_outline,
+                  text: trc(context, 'guide_empty'),
+                  onRetry: _load,
+                  retryLabel: trc(context, 'retry'),
+                )
+              : ListView.builder(
               padding: const EdgeInsets.all(12),
               itemCount: _sections.length,
               itemBuilder: (ctx, i) {
@@ -338,14 +354,18 @@ class _SectionArticlesPageState extends State<SectionArticlesPage> {
   @override
   void initState() {
     super.initState();
-    Repo.i.articlesBySection(widget.section).then((a) {
-      if (mounted) {
-        setState(() {
-          _articles = a;
-          _loading = false;
-        });
-      }
-    });
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    final a = await Repo.i.articlesBySection(widget.section);
+    if (mounted) {
+      setState(() {
+        _articles = a;
+        _loading = false;
+      });
+    }
   }
 
   @override
@@ -354,7 +374,14 @@ class _SectionArticlesPageState extends State<SectionArticlesPage> {
       appBar: AppBar(title: Text(widget.section)),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : ListView.builder(
+          : _articles.isEmpty
+              ? EmptyState(
+                  icon: Icons.article_outlined,
+                  text: trc(context, 'section_empty'),
+                  onRetry: _load,
+                  retryLabel: trc(context, 'retry'),
+                )
+              : ListView.builder(
               padding: const EdgeInsets.all(12),
               itemCount: _articles.length,
               itemBuilder: (ctx, i) {

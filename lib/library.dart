@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'app_state.dart';
 import 'db.dart';
 import 'tools.dart';
 import 'widgets.dart';
@@ -20,15 +21,25 @@ class _LibraryPageState extends State<LibraryPage> {
   @override
   void initState() {
     super.initState();
-    Repo.i.allTemplates().then((t) {
-      if (mounted) {
-        setState(() {
-          _templates = t;
-          _shown = t;
-          _loading = false;
-        });
-      }
-    });
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final t = await Repo.i.allTemplates();
+      if (!mounted) return;
+      setState(() {
+        _templates = t;
+        _shown = t;
+        _loading = false;
+      });
+    } catch (_) {
+      // A DB failure used to leave the loading spinner forever.
+      if (!mounted) return;
+      setState(() => _loading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(trc(context, 'library_load_failed'))));
+    }
   }
 
   Future<void> _onSearch(String q) async {
@@ -37,15 +48,24 @@ class _LibraryPageState extends State<LibraryPage> {
       return;
     }
     final res = await Repo.i.searchTemplates(q);
-    if (mounted) setState(() => _shown = res);
+    // A slow earlier query must not overwrite results for newer input.
+    if (!mounted || _search.text != q) return;
+    setState(() => _shown = res);
   }
 
   Future<void> _openUrl(String url) async {
-    final uri = Uri.parse(url);
-    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+    try {
+      final uri = Uri.parse(url);
+      if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(trc(context, 'open_link_failed'))));
+        }
+      }
+    } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('تعذر فتح الرابط')));
+            SnackBar(content: Text(trc(context, 'open_link_failed'))));
       }
     }
   }
@@ -59,7 +79,7 @@ class _LibraryPageState extends State<LibraryPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('المكتبة')),
+      appBar: AppBar(title: Text(trc(context, 'library'))),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
@@ -69,14 +89,14 @@ class _LibraryPageState extends State<LibraryPage> {
                 children: [
                   TextField(
                     controller: _search,
-                    decoration: const InputDecoration(
-                      hintText: 'ابحث في المكتبة...',
-                      prefixIcon: Icon(Icons.search),
+                    decoration: InputDecoration(
+                      hintText: trc(context, 'library_search_hint'),
+                      prefixIcon: const Icon(Icons.search),
                     ),
                     onChanged: _onSearch,
                   ),
                   const SizedBox(height: 14),
-                  const SectionHeader(title: 'الوثائق والاتفاقيات الدولية'),
+                  SectionHeader(title: trc(context, 'library_docs')),
                   const SizedBox(height: 6),
                   ...libraryDocs.map((d) => Card(
                         margin: const EdgeInsets.only(bottom: 8),
@@ -105,12 +125,12 @@ class _LibraryPageState extends State<LibraryPage> {
                         ),
                       )),
                   const SizedBox(height: 14),
-                  const SectionHeader(title: 'النماذج والقوالب الجاهزة'),
+                  SectionHeader(title: trc(context, 'library_templates')),
                   const SizedBox(height: 6),
                   if (_shown.isEmpty)
-                    const EmptyState(
+                    EmptyState(
                         icon: Icons.description,
-                        text: 'لا توجد نماذج مطابقة للبحث.'),
+                        text: trc(context, 'library_no_templates')),
                   ..._shown.map((t) => Card(
                         margin: const EdgeInsets.only(bottom: 8),
                         child: ListTile(
@@ -131,9 +151,9 @@ class _LibraryPageState extends State<LibraryPage> {
                         ),
                       )),
                   const SizedBox(height: 10),
-                  const Text(
-                    'ملاحظة: الوثائق الدولية روابط إلى مصادرها الرسمية (الأمم المتحدة وغيرها) ولا تُخزَّن داخل التطبيق احترامًا لحقوق النشر.',
-                    style: TextStyle(fontSize: 12, color: AppColors.stone),
+                  Text(
+                    trc(context, 'library_note'),
+                    style: TextStyle(fontSize: 12, color: context.mutedColor),
                   ),
                 ],
               ),

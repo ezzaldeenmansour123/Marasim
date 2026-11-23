@@ -15,19 +15,92 @@ String normalizeAr(String s) {
 
 /// Builds an FTS5 MATCH expression: every query term matches with or without
 /// the "ال" prefix. Terms are ANDed; variants of one term are ORed.
-String _searchExpr(String normed) {
-  final groups = <String>[];
-  for (final t in normed.split(' ')) {
-    if (t.isEmpty) continue;
-    final variants = <String>{t};
-    if (t.startsWith('ال') && t.length > 4) {
-      variants.add(t.substring(2));
-    } else {
-      variants.add('ال$t');
-    }
-    groups.add('(${variants.map((v) => '"$v"*').join(' OR ')})');
+String _termGroup(String t) {
+  final variants = <String>{t};
+  final extra = _wordVariants[t];
+  if (extra != null) variants.addAll(extra);
+  if (t.startsWith('ال') && t.length > 4) {
+    variants.add(t.substring(2));
+  } else {
+    variants.add('ال$t');
   }
-  return groups.join(' AND ');
+  return '(${variants.map((v) => '"$v"*').join(' OR ')})';
+}
+
+String _andExpr(List<String> terms) =>
+    terms.map(_termGroup).join(' AND ');
+
+String _orExpr(List<String> terms) =>
+    terms.map(_termGroup).join(' OR ');
+
+/// Arabic question/request words that carry no search meaning. All entries
+/// are in normalized form (see normalizeAr: ة→ه, ى→ي, إأآ→ا).
+const arStopwords = {
+  'كيف', 'ما', 'ماذا', 'هل', 'لماذا', 'متي', 'اين', 'من', 'اريد', 'اعطني',
+  'ابحث', 'ارني', 'اظهر', 'اعرض', 'هات', 'احضر', 'اذكر', 'اورد', 'هو', 'هي',
+  'في', 'الي', 'عن', 'علي', 'مع', 'هذا', 'هذه', 'ذلك', 'تلك', 'كان', 'يكون',
+  'تتم', 'يتم', 'يضم', 'خمس', 'اربع', 'ثلاث', 'ست', 'سبع', 'ثمان', 'تسع',
+  'عشر', 'واحد', 'اثنان', 'اثنين', 'بين', 'بعد', 'قبل', 'عند', 'لدي', 'ان',
+  'انه', 'انها', 'او', 'ام', 'بل', 'لكن', 'ثم', 'كما', 'اي', 'كل', 'بعض',
+  'غير', 'دون', 'ضد', 'نحو', 'حول', 'داخل', 'خارج', 'فوق', 'تحت', 'امام',
+  'خلف', 'خلال', 'اثناء', 'منذ', 'حتي', 'لكي', 'لان', 'اذا', 'عندما', 'بينما',
+  'حيث', 'الذي', 'التي', 'الذين', 'ارتب', 'اعد', 'اكتب', 'اشرح', 'عرف',
+  'لي', 'ليس', 'قد', 'لقد', 'سوف', 'سي', 'بان', 'فان', 'انما', 'اما', 'ايضا',
+  'فقط', 'جدا', 'نفس', 'ذات', 'الان', 'اليوم', 'غدا', 'ايه', 'ايها', 'ايتها',
+  'اولا', 'ثانيا', 'ثالثا', 'مثلا', 'ممكن', 'يمكن', 'ارغب', 'احتاج', 'اسال',
+};
+
+/// Singular/plural pairs that are NOT prefix extensions of each other, so
+/// FTS prefix matching alone cannot connect them (وفد ≠ وفود, رئيس ≠ رؤساء).
+/// Keys and values are normalized forms.
+const _wordVariants = {
+  'وفد': ['وفود'],
+  'وفود': ['وفد'],
+  'سفير': ['سفراء'],
+  'سفراء': ['سفير'],
+  'وزير': ['وزراء'],
+  'وزراء': ['وزير'],
+  'رئيس': ['رؤساء'],
+  'رؤساء': ['رئيس'],
+  'علم': ['اعلام'],
+  'اعلام': ['علم'],
+  'لقب': ['القاب'],
+  'القاب': ['لقب'],
+  'ملك': ['ملوك'],
+  'ملوك': ['ملك'],
+  'امير': ['امراء'],
+  'امراء': ['امير'],
+  'ضيف': ['ضيوف'],
+  'ضيوف': ['ضيف'],
+  'قاعده': ['قواعد'],
+  'قواعد': ['قاعده'],
+  'وثيقه': ['وثائق'],
+  'وثائق': ['وثيقه'],
+  'مذكره': ['مذكرات'],
+  'مذكرات': ['مذكره'],
+  'برنامج': ['برامج'],
+  'برامج': ['برنامج'],
+  'دوله': ['دول'],
+  'دول': ['دوله'],
+  'اتفاقيه': ['اتفاقيات'],
+  'اتفاقيات': ['اتفاقيه'],
+  'دعوه': ['دعوات'],
+  'دعوات': ['دعوه'],
+  'زياره': ['زيارات'],
+  'زيارات': ['زياره'],
+  'مناسبه': ['مناسبات'],
+  'مناسبات': ['مناسبه'],
+};
+
+/// Meaningful query terms: normalized, stopwords removed. Falls back to all
+/// terms when the query is only stopwords (e.g. «كيف؟»).
+List<String> queryTerms(String q) {
+  final all = normalizeAr(q)
+      .split(' ')
+      .where((t) => t.isNotEmpty)
+      .toList();
+  final kept = all.where((t) => !arStopwords.contains(t)).toList();
+  return kept.isEmpty ? all : kept;
 }
 
 /// Diplomatic precedence ranks (general order; ambassadors within one rank
@@ -252,6 +325,14 @@ class Repo {
       await File(path).writeAsBytes(data.buffer.asUint8List());
     }
     _db = await openDatabase(path);
+    // v1.0.1 migration: seating_assignments gains rank_category so a saved
+    // seating guest's rank survives reload (v1.0.0 installs lack the column).
+    try {
+      await _db!.execute(
+          'ALTER TABLE seating_assignments ADD COLUMN rank_category TEXT');
+    } catch (_) {
+      // Column already exists on fresh v1.0.1 installs.
+    }
     return _db!;
   }
 
@@ -263,36 +344,44 @@ class Repo {
   }
 
   // ── Search (FTS5) ──
-  Future<List<Article>> searchArticles(String q, {int limit = 20}) async {
+  /// Runs an FTS5 search with a three-stage fallback so natural questions
+  /// work: strict AND of the meaningful terms first, then OR across them,
+  /// then the single longest term. Never throws: a bad query returns [].
+  Future<List<Map<String, Object?>>> _ftsSearch(
+      String table, String fts, String q, int limit) async {
     final d = await db;
-    final n = normalizeAr(q);
-    if (n.isEmpty) return [];
-    final rows = await d.rawQuery(
-        'SELECT a.* FROM articles a JOIN articles_fts f ON f.rowid = a.id '
-        'WHERE articles_fts MATCH ? ORDER BY rank LIMIT ?',
-        [_searchExpr(n), limit]);
+    final terms = queryTerms(q);
+    if (terms.isEmpty) return [];
+    final sql = 'SELECT t.* FROM $table t JOIN $fts f ON f.rowid = t.id '
+        'WHERE $fts MATCH ? ORDER BY rank LIMIT ?';
+    try {
+      var rows = await d.rawQuery(sql, [_andExpr(terms), limit]);
+      if (rows.isEmpty && terms.length > 1) {
+        rows = await d.rawQuery(sql, [_orExpr(terms), limit]);
+      }
+      if (rows.isEmpty) {
+        final longest =
+            terms.reduce((a, b) => a.length >= b.length ? a : b);
+        rows = await d.rawQuery(sql, [_termGroup(longest), limit]);
+      }
+      return rows;
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<List<Article>> searchArticles(String q, {int limit = 20}) async {
+    final rows = await _ftsSearch('articles', 'articles_fts', q, limit);
     return rows.map(Article.fromMap).toList();
   }
 
   Future<List<Country>> searchCountries(String q, {int limit = 20}) async {
-    final d = await db;
-    final n = normalizeAr(q);
-    if (n.isEmpty) return [];
-    final rows = await d.rawQuery(
-        'SELECT c.* FROM countries c JOIN countries_fts f ON f.rowid = c.id '
-        'WHERE countries_fts MATCH ? ORDER BY rank LIMIT ?',
-        [_searchExpr(n), limit]);
+    final rows = await _ftsSearch('countries', 'countries_fts', q, limit);
     return rows.map(Country.fromMap).toList();
   }
 
   Future<List<TemplateDoc>> searchTemplates(String q, {int limit = 20}) async {
-    final d = await db;
-    final n = normalizeAr(q);
-    if (n.isEmpty) return [];
-    final rows = await d.rawQuery(
-        'SELECT t.* FROM templates t JOIN templates_fts f ON f.rowid = t.id '
-        'WHERE templates_fts MATCH ? ORDER BY rank LIMIT ?',
-        [_searchExpr(n), limit]);
+    final rows = await _ftsSearch('templates', 'templates_fts', q, limit);
     return rows.map(TemplateDoc.fromMap).toList();
   }
 

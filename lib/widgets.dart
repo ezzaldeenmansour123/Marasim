@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:material_ui/material_ui.dart';
+import 'app_state.dart';
 
 class AppColors {
   static const navy = Color(0xFF0B2239);
@@ -9,44 +10,88 @@ class AppColors {
   static const pearl = Color(0xFFF7F5F0);
   static const stone = Color(0xFF6B7280);
   static const cardBorder = Color(0xFFE3DCCB);
+  // Night mode palette.
+  static const darkBg = Color(0xFF0A1826);
+  static const darkSurface = Color(0xFF12263A);
+  static const darkCard = Color(0xFF162E47);
+  static const darkBorder = Color(0xFF2A4258);
+  static const darkMuted = Color(0xFF9FB0C3);
+  static const darkBody = Color(0xFFE8E4DA);
+}
+
+/// Theme-aware colors for text and surfaces that must stay readable in both
+/// light and night mode. Use these instead of hardcoded navy/white/stone
+/// when the color sits directly on the scaffold or a card background.
+extension ThemeColors on BuildContext {
+  bool get isDark => Theme.of(this).brightness == Brightness.dark;
+  Color get headingColor => isDark ? AppColors.pearl : AppColors.navy;
+  Color get bodyColor =>
+      isDark ? AppColors.darkBody : const Color(0xFF1F2937);
+  Color get mutedColor => isDark ? AppColors.darkMuted : AppColors.stone;
+  Color get cardBorderColor =>
+      isDark ? AppColors.darkBorder : AppColors.cardBorder;
 }
 
 class AppTheme {
-  static ThemeData light(double fontScale) {
-    final base = ThemeData(
+  static ThemeData _base({
+    required Brightness brightness,
+    required Color scaffold,
+    required Color card,
+    required Color border,
+    required Color heading,
+    required Color body,
+    required Color muted,
+    required Color inputFill,
+    required Color chipBg,
+    required Color navBg,
+    required Color navSelected,
+    required Color navUnselected,
+    required Color elevatedBg,
+    required Color elevatedFg,
+    required double fontScale,
+  }) {
+    return ThemeData(
       useMaterial3: true,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: AppColors.navy,
-        primary: AppColors.navy,
+      brightness: brightness,
+      colorScheme: ColorScheme(
+        brightness: brightness,
+        primary: brightness == Brightness.dark ? AppColors.gold : AppColors.navy,
+        onPrimary:
+            brightness == Brightness.dark ? AppColors.navy : Colors.white,
         secondary: AppColors.gold,
-        surface: AppColors.pearl,
+        onSecondary: AppColors.navy,
+        surface: card,
+        onSurface: heading,
+        error: const Color(0xFFB3261E),
+        onError: Colors.white,
       ),
-      scaffoldBackgroundColor: AppColors.pearl,
-      fontFamily: 'Amiri',
+      scaffoldBackgroundColor: scaffold,
+      canvasColor: navBg,
+      fontFamily: 'Cairo',
       textTheme: TextTheme(
         headlineLarge: TextStyle(
             fontSize: 26 * fontScale,
             fontWeight: FontWeight.bold,
-            color: AppColors.navy),
+            color: heading),
         headlineMedium: TextStyle(
             fontSize: 22 * fontScale,
             fontWeight: FontWeight.bold,
-            color: AppColors.navy),
+            color: heading),
         headlineSmall: TextStyle(
             fontSize: 19 * fontScale,
             fontWeight: FontWeight.bold,
-            color: AppColors.navy),
+            color: heading),
         titleLarge: TextStyle(
             fontSize: 18 * fontScale,
             fontWeight: FontWeight.bold,
-            color: AppColors.navy),
+            color: heading),
         titleMedium: TextStyle(
             fontSize: 16 * fontScale,
             fontWeight: FontWeight.w600,
-            color: AppColors.navy),
-        bodyLarge: TextStyle(fontSize: 16 * fontScale, color: const Color(0xFF1F2937)),
-        bodyMedium: TextStyle(fontSize: 14 * fontScale, color: const Color(0xFF1F2937)),
-        bodySmall: TextStyle(fontSize: 12 * fontScale, color: AppColors.stone),
+            color: heading),
+        bodyLarge: TextStyle(fontSize: 16 * fontScale, color: body),
+        bodyMedium: TextStyle(fontSize: 14 * fontScale, color: body),
+        bodySmall: TextStyle(fontSize: 12 * fontScale, color: muted),
       ),
       appBarTheme: const AppBarTheme(
         backgroundColor: AppColors.navy,
@@ -55,37 +100,54 @@ class AppTheme {
         elevation: 0,
       ),
       cardTheme: CardThemeData(
-        color: Colors.white,
+        color: card,
         elevation: 1,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: AppColors.cardBorder),
+          side: BorderSide(color: border),
         ),
+      ),
+      bottomNavigationBarTheme: BottomNavigationBarThemeData(
+        backgroundColor: navBg,
+        selectedItemColor: navSelected,
+        unselectedItemColor: navUnselected,
+        type: BottomNavigationBarType.fixed,
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: card,
+        titleTextStyle: TextStyle(
+            fontSize: 18 * fontScale,
+            fontWeight: FontWeight.bold,
+            color: heading),
+        contentTextStyle:
+            TextStyle(fontSize: 14 * fontScale, color: body),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.navy,
-          foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          backgroundColor: elevatedBg,
+          foregroundColor: elevatedFg,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         ),
       ),
       chipTheme: ChipThemeData(
-        backgroundColor: const Color(0xFFEFF1F5),
+        backgroundColor: chipBg,
         selectedColor: AppColors.navy,
-        labelStyle: TextStyle(fontSize: 13 * fontScale),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        labelStyle: TextStyle(fontSize: 13 * fontScale, color: body),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20)),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: Colors.white,
+        fillColor: inputFill,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppColors.cardBorder),
+          borderSide: BorderSide(color: border),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppColors.cardBorder),
+          borderSide: BorderSide(color: border),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
@@ -93,19 +155,57 @@ class AppTheme {
         ),
       ),
     );
-    return base;
   }
+
+  static ThemeData light(double fontScale) => _base(
+        brightness: Brightness.light,
+        scaffold: AppColors.pearl,
+        card: Colors.white,
+        border: AppColors.cardBorder,
+        heading: AppColors.navy,
+        body: const Color(0xFF1F2937),
+        muted: AppColors.stone,
+        inputFill: Colors.white,
+        chipBg: const Color(0xFFEFF1F5),
+        navBg: Colors.white,
+        navSelected: AppColors.navy,
+        navUnselected: AppColors.stone,
+        elevatedBg: AppColors.navy,
+        elevatedFg: Colors.white,
+        fontScale: fontScale,
+      );
+
+  static ThemeData dark(double fontScale) => _base(
+        brightness: Brightness.dark,
+        scaffold: AppColors.darkBg,
+        card: AppColors.darkCard,
+        border: AppColors.darkBorder,
+        heading: AppColors.pearl,
+        body: AppColors.darkBody,
+        muted: AppColors.darkMuted,
+        inputFill: AppColors.darkSurface,
+        chipBg: const Color(0xFF1E3A56),
+        navBg: AppColors.navy,
+        navSelected: AppColors.gold,
+        navUnselected: const Color(0xFF8FA3B8),
+        elevatedBg: AppColors.gold,
+        elevatedFg: AppColors.navy,
+        fontScale: fontScale,
+      );
 }
 
-/// Rotating hero images (bundled photos, cross-fade every 5 seconds).
-class HeroCarousel extends StatefulWidget {
-  final double height;
-  const HeroCarousel({super.key, this.height = 190});
+/// Full-bleed animated background: the 8 bundled hero photos crossfading
+/// every 6 seconds with a slow Ken Burns zoom/pan, behind a dark navy
+/// gradient scrim so content stays readable. Lightweight: a single image
+/// plus one repeating zoom controller, no blur.
+class AnimatedBackground extends StatefulWidget {
+  const AnimatedBackground({super.key});
   @override
-  State<HeroCarousel> createState() => _HeroCarouselState();
+  State<AnimatedBackground> createState() => _AnimatedBackgroundState();
 }
 
-class _HeroCarouselState extends State<HeroCarousel> {
+class _AnimatedBackgroundState extends State<AnimatedBackground>
+    with SingleTickerProviderStateMixin {
   static const images = [
     'assets/images/hero1.jpg',
     'assets/images/hero2.jpg',
@@ -118,93 +218,70 @@ class _HeroCarouselState extends State<HeroCarousel> {
   ];
   int _index = 0;
   Timer? _timer;
+  late final AnimationController _zoom;
+  bool _precached = false;
 
   @override
   void initState() {
     super.initState();
-    _timer = Timer.periodic(const Duration(seconds: 5), (_) {
+    _zoom = AnimationController(
+        vsync: this, duration: const Duration(seconds: 12))
+      ..repeat(reverse: true);
+    _timer = Timer.periodic(const Duration(seconds: 6), (_) {
       if (mounted) setState(() => _index = (_index + 1) % images.length);
     });
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_precached) {
+      _precached = true;
+      for (final img in images) {
+        precacheImage(AssetImage(img), context);
+      }
+    }
+  }
+
+  @override
   void dispose() {
     _timer?.cancel();
+    _zoom.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(18),
-      child: SizedBox(
-        height: widget.height,
-        width: double.infinity,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 800),
-              child: Image.asset(
-                images[_index],
-                key: ValueKey(images[_index]),
-                fit: BoxFit.cover,
-                errorBuilder: (c, e, st) => Container(
-                  color: AppColors.navy,
-                  alignment: Alignment.center,
-                  child: Image.asset('assets/logo.png',
-                      width: 90, height: 90,
-                      errorBuilder: (c, e, st) => const Icon(Icons.public,
-                          color: AppColors.gold, size: 48)),
-                ),
-              ),
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 1200),
+          child: ScaleTransition(
+            key: ValueKey(images[_index]),
+            scale: Tween<double>(begin: 1.0, end: 1.12).animate(
+                CurvedAnimation(parent: _zoom, curve: Curves.easeInOut)),
+            child: Image.asset(
+              images[_index],
+              fit: BoxFit.cover,
+              errorBuilder: (c, e, st) => Container(color: AppColors.navy),
             ),
-            Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.transparent,
-                    AppColors.navy.withValues(alpha: 0.55),
-                  ],
-                ),
-              ),
-            ),
-            Positioned(
-              right: 14,
-              left: 14,
-              bottom: 12,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text('مراسم — منصة البروتوكول الدولي',
-                      style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 15)),
-                  Row(
-                    children: List.generate(
-                      images.length,
-                      (i) => Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 2),
-                        width: i == _index ? 14 : 6,
-                        height: 6,
-                        decoration: BoxDecoration(
-                          color: i == _index
-                              ? AppColors.gold
-                              : Colors.white.withValues(alpha: 0.6),
-                          borderRadius: BorderRadius.circular(3),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+          ),
         ),
-      ),
+        Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                AppColors.navy.withValues(alpha: 0.72),
+                AppColors.navy.withValues(alpha: 0.55),
+                AppColors.navy.withValues(alpha: 0.80),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -223,7 +300,7 @@ class HomeTile extends StatelessWidget {
       borderRadius: BorderRadius.circular(16),
       child: Container(
         decoration: BoxDecoration(
-          color: AppColors.navy,
+          color: context.isDark ? AppColors.darkCard : AppColors.navy,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: AppColors.gold.withValues(alpha: 0.5)),
         ),
@@ -257,10 +334,14 @@ class SectionHeader extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(title,
-            style: const TextStyle(
-                fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.navy)),
+            style: TextStyle(
+                fontFamily: 'Amiri',
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: context.headingColor)),
         if (onMore != null)
-          TextButton(onPressed: onMore, child: const Text('عرض الكل')),
+          TextButton(
+              onPressed: onMore, child: Text(trc(context, 'view_all'))),
       ],
     );
   }
@@ -279,12 +360,14 @@ class SourceLine extends StatelessWidget {
   });
   @override
   Widget build(BuildContext context) {
+    final isDark = context.isDark;
+    final binding = ruleType == 'ملزمة دوليًا';
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: const Color(0xFFF3EDDD),
+        color: isDark ? AppColors.darkSurface : const Color(0xFFF3EDDD),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.cardBorder),
+        border: Border.all(color: context.cardBorderColor),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -295,31 +378,38 @@ class SourceLine extends StatelessWidget {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: ruleType == 'ملزمة دوليًا'
-                      ? AppColors.navy
-                      : AppColors.gold,
+                  color: isDark
+                      ? (binding ? AppColors.gold : AppColors.navyLight)
+                      : (binding ? AppColors.navy : AppColors.gold),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(ruleType,
-                    style: const TextStyle(color: Colors.white, fontSize: 11)),
+                    style: TextStyle(
+                        color: isDark && binding
+                            ? AppColors.navy
+                            : Colors.white,
+                        fontSize: 11)),
               ),
               const SizedBox(width: 6),
-              const Icon(Icons.verified, size: 15, color: AppColors.navy),
+              const Icon(Icons.verified, size: 15, color: AppColors.gold),
               const SizedBox(width: 4),
-              const Text('المصدر:',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+              Text(trc(context, 'source'),
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                      color: context.headingColor)),
             ],
           ),
           const SizedBox(height: 4),
-          Text(sourceName, style: const TextStyle(fontSize: 12.5)),
+          Text(sourceName, style: TextStyle(fontSize: 12.5, color: context.bodyColor)),
           Text(sourceOrg,
-              style: const TextStyle(fontSize: 12, color: AppColors.stone)),
+              style: TextStyle(fontSize: 12, color: context.mutedColor)),
           if (reviewed.isNotEmpty)
-            Text('آخر مراجعة: $reviewed',
-                style: const TextStyle(fontSize: 11, color: AppColors.stone)),
+            Text('${trc(context, 'last_review')} $reviewed',
+                style: TextStyle(fontSize: 11, color: context.mutedColor)),
           if (sourceUrl.isNotEmpty)
             Text(sourceUrl,
-                style: const TextStyle(fontSize: 11, color: AppColors.navy),
+                style: const TextStyle(fontSize: 11, color: AppColors.gold),
                 textDirection: TextDirection.ltr,
                 textAlign: TextAlign.right),
         ],
@@ -331,7 +421,15 @@ class SourceLine extends StatelessWidget {
 class EmptyState extends StatelessWidget {
   final IconData icon;
   final String text;
-  const EmptyState({super.key, required this.icon, required this.text});
+  final VoidCallback? onRetry;
+  final String retryLabel;
+  const EmptyState({
+    super.key,
+    required this.icon,
+    required this.text,
+    this.onRetry,
+    this.retryLabel = '',
+  });
   @override
   Widget build(BuildContext context) {
     return Center(
@@ -340,11 +438,19 @@ class EmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 48, color: AppColors.stone),
+            Icon(icon, size: 48, color: context.mutedColor),
             const SizedBox(height: 12),
             Text(text,
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: AppColors.stone)),
+                style: TextStyle(color: context.mutedColor)),
+            if (onRetry != null) ...[
+              const SizedBox(height: 16),
+              OutlinedButton(
+                  onPressed: onRetry,
+                  child: Text(retryLabel.isEmpty
+                      ? trc(context, 'retry')
+                      : retryLabel)),
+            ],
           ],
         ),
       ),

@@ -1,11 +1,39 @@
 import 'dart:math' as math;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'app_state.dart';
 import 'db.dart';
 import 'notifications.dart';
 import 'pdf_export.dart';
 import 'widgets.dart';
+
+/// Display label for a stored table shape value.
+String _shapeLabel(BuildContext context, String shape) {
+  return trc(context, switch (shape) {
+    'مستطيلة' => 'shape_rect',
+    'U' => 'shape_u',
+    _ => 'shape_round',
+  });
+}
+
+/// Display label for a stored event-type value.
+String _eventTypeLabel(BuildContext context, String type) {
+  return trc(context, switch (type) {
+    'مؤتمر' => 'event_type_conference',
+    'احتفال' => 'event_type_celebration',
+    'اجتماع ثنائي' => 'event_type_bilateral',
+    'مأدبة رسمية' => 'event_type_banquet',
+    _ => 'event_type_visit',
+  });
+}
+
+/// List separator in the current UI language.
+String _listSep(BuildContext context) =>
+    Provider.of<AppState>(context, listen: false).language == 'en'
+        ? ', '
+        : '، ';
 
 /// Hub of the practical tools.
 class ToolsHubPage extends StatelessWidget {
@@ -14,19 +42,19 @@ class ToolsHubPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tools = [
-      ('حاسبة الأسبقية', Icons.format_list_numbered,
-          'رتّب الشخصيات وفق قواعد الأسبقية الدبلوماسية', const PrecedencePage()),
-      ('مخطط الجلوس', Icons.event_seat,
-          'طاولة مستديرة أو مستطيلة أو على شكل U', const SeatingPlansPage()),
-      ('منظم المناسبات', Icons.event,
-          'أنشئ مناسبة بضيوفها وبرنامجها وقوائمها', const EventsPage()),
-      ('مولد المستندات', Icons.description,
-          'دعوات وخطابات وبرامج — تصدير PDF', const DocGeneratorPage()),
-      ('مدقق البروتوكول', Icons.fact_check,
-          'راجع خطة مناسبة واكتشف الأخطاء', const CheckerPickerPage()),
+      (trc(context, 'tool_precedence'), Icons.format_list_numbered,
+          trc(context, 'tool_precedence_sub'), const PrecedencePage()),
+      (trc(context, 'tool_seating'), Icons.event_seat,
+          trc(context, 'tool_seating_sub'), const SeatingPlansPage()),
+      (trc(context, 'tool_events'), Icons.event,
+          trc(context, 'tool_events_sub'), const EventsPage()),
+      (trc(context, 'tool_docs'), Icons.description,
+          trc(context, 'tool_docs_sub'), const DocGeneratorPage()),
+      (trc(context, 'tool_checker'), Icons.fact_check,
+          trc(context, 'tool_checker_sub'), const CheckerPickerPage()),
     ];
     return Scaffold(
-      appBar: AppBar(title: const Text('الأدوات العملية')),
+      appBar: AppBar(title: Text(trc(context, 'tools_title'))),
       body: ListView.builder(
         padding: const EdgeInsets.all(12),
         itemCount: tools.length,
@@ -56,12 +84,17 @@ class ToolsHubPage extends StatelessWidget {
 // ═══════════ 1. حاسبة الأسبقية ═══════════
 
 class _Person {
+  static int _nextId = 0;
+  // Stable id so list cards keep their TextFormField state when a person
+  // above them is removed (without it, fields show the wrong person's text).
+  final int id;
   String name, country, rankKey, credentialDate;
   _Person(
       {this.name = '',
       this.country = '',
       this.rankKey = 'ambassador',
-      this.credentialDate = ''});
+      this.credentialDate = ''})
+      : id = _nextId++;
 }
 
 class PrecedencePage extends StatefulWidget {
@@ -79,8 +112,27 @@ class _PrecedencePageState extends State<PrecedencePage> {
   List<_Person>? _ordered;
 
   void _compute() {
-    final maps = _persons
-        .where((p) => p.name.trim().isNotEmpty)
+    final named = _persons.where((p) => p.name.trim().isNotEmpty).toList();
+    if (named.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(trc(context, 'prec_need_one'))));
+      return;
+    }
+    // Ambassadors order by credential date: reject a malformed date instead
+    // of silently sorting it as a string.
+    final badDate = RegExp(r'^\d{4}-\d{2}-\d{2}$');
+    for (final p in named) {
+      if (p.rankKey == 'ambassador' && p.credentialDate.trim().isNotEmpty) {
+        final d = p.credentialDate.trim();
+        if (!badDate.hasMatch(d) || DateTime.tryParse(d) == null) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(trc(context, 'prec_bad_date')
+                  .replaceFirst('{name}', p.name.trim()))));
+          return;
+        }
+      }
+    }
+    final maps = named
         .map((p) => {
               'name': p.name,
               'country': p.country,
@@ -89,6 +141,7 @@ class _PrecedencePageState extends State<PrecedencePage> {
             })
         .toList();
     final ordered = orderByPrecedence(maps);
+    final ignored = _persons.length - named.length;
     setState(() {
       _ordered = ordered
           .map((m) => _Person(
@@ -99,25 +152,31 @@ class _PrecedencePageState extends State<PrecedencePage> {
               ))
           .toList();
     });
+    if (ignored > 0 && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(trc(context, 'prec_ignored')
+              .replaceFirst('{n}', '$ignored'))));
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('حاسبة الأسبقية')),
+      appBar: AppBar(title: Text(trc(context, 'tool_precedence'))),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-                'أضف الشخصيات (الاسم والمنصب والدولة وتاريخ تقديم أوراق الاعتماد للسفراء)، ثم اضغط «احسب الترتيب».',
-                style: TextStyle(color: AppColors.stone)),
+            Text(
+                trc(context, 'prec_intro'),
+                style: TextStyle(color: context.mutedColor)),
             const SizedBox(height: 12),
             ..._persons.asMap().entries.map((e) {
               final i = e.key;
               final p = e.value;
               return Card(
+                key: ValueKey('person-${p.id}'),
                 margin: const EdgeInsets.only(bottom: 10),
                 child: Padding(
                   padding: const EdgeInsets.all(12),
@@ -128,16 +187,18 @@ class _PrecedencePageState extends State<PrecedencePage> {
                           Expanded(
                             child: TextFormField(
                               initialValue: p.name,
-                              decoration: const InputDecoration(
-                                  labelText: 'الاسم / المنصب'),
+                              decoration: InputDecoration(
+                                  labelText: trc(context, 'prec_name_post')),
                               onChanged: (v) => p.name = v,
                             ),
                           ),
                           IconButton(
                             icon: const Icon(Icons.delete_outline,
                                 color: Colors.red),
-                            onPressed: () =>
-                                setState(() => _persons.removeAt(i)),
+                            onPressed: () => setState(() {
+                                  _persons.removeAt(i);
+                                  _ordered = null;
+                                }),
                           ),
                         ],
                       ),
@@ -149,13 +210,18 @@ class _PrecedencePageState extends State<PrecedencePage> {
                               key: ValueKey(p.rankKey),
                               initialValue: p.rankKey,
                               decoration:
-                                  const InputDecoration(labelText: 'الفئة'),
+                                  InputDecoration(
+                                      labelText: trc(context, 'prec_category')),
                               items: precedenceRanks
                                   .map((r) => DropdownMenuItem(
-                                      value: r.$1, child: Text(r.$2)))
+                                      value: r.$1,
+                                      child: Text(
+                                          rankLabelTr(context, r.$1))))
                                   .toList(),
-                              onChanged: (v) =>
-                                  setState(() => p.rankKey = v ?? 'ambassador'),
+                              onChanged: (v) => setState(() {
+                                    p.rankKey = v ?? 'ambassador';
+                                    _ordered = null;
+                                  }),
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -163,7 +229,8 @@ class _PrecedencePageState extends State<PrecedencePage> {
                             child: TextFormField(
                               initialValue: p.country,
                               decoration:
-                                  const InputDecoration(labelText: 'الدولة'),
+                                  InputDecoration(
+                                      labelText: trc(context, 'prec_country')),
                               onChanged: (v) => p.country = v,
                             ),
                           ),
@@ -173,8 +240,8 @@ class _PrecedencePageState extends State<PrecedencePage> {
                         const SizedBox(height: 8),
                         TextFormField(
                           initialValue: p.credentialDate,
-                          decoration: const InputDecoration(
-                              labelText: 'تاريخ تقديم أوراق الاعتماد (YYYY-MM-DD)',
+                          decoration: InputDecoration(
+                              labelText: trc(context, 'prec_cred_date'),
                               hintText: '2024-03-10'),
                           onChanged: (v) => p.credentialDate = v,
                         ),
@@ -188,20 +255,23 @@ class _PrecedencePageState extends State<PrecedencePage> {
               children: [
                 OutlinedButton.icon(
                   icon: const Icon(Icons.add),
-                  label: const Text('إضافة شخص'),
-                  onPressed: () => setState(() => _persons.add(_Person())),
+                  label: Text(trc(context, 'prec_add_person')),
+                  onPressed: () => setState(() {
+                        _persons.add(_Person());
+                        _ordered = null;
+                      }),
                 ),
                 const SizedBox(width: 10),
                 ElevatedButton.icon(
                   icon: const Icon(Icons.calculate),
-                  label: const Text('احسب الترتيب'),
+                  label: Text(trc(context, 'prec_compute')),
                   onPressed: _compute,
                 ),
               ],
             ),
             if (_ordered != null) ...[
               const SizedBox(height: 16),
-              const SectionHeader(title: 'الترتيب المقترح'),
+              SectionHeader(title: trc(context, 'prec_result')),
               const SizedBox(height: 8),
               ..._ordered!.asMap().entries.map((e) {
                 final i = e.key;
@@ -217,7 +287,7 @@ class _PrecedencePageState extends State<PrecedencePage> {
                     title: Text(p.name,
                         style: const TextStyle(fontWeight: FontWeight.bold)),
                     subtitle: Text(
-                        '${rankLabel(p.rankKey)}${p.country.isNotEmpty ? ' — ${p.country}' : ''}${p.credentialDate.isNotEmpty ? ' • اعتماد: ${p.credentialDate}' : ''}'),
+                        '${rankLabelTr(context, p.rankKey)}${p.country.isNotEmpty ? ' — ${p.country}' : ''}${p.credentialDate.isNotEmpty ? ' • ${trc(context, 'prec_accred')} ${p.credentialDate}' : ''}'),
                   ),
                 );
               }),
@@ -231,17 +301,26 @@ class _PrecedencePageState extends State<PrecedencePage> {
                 ruleType: 'ملزمة دوليًا',
               ),
               const SizedBox(height: 8),
-              const Text(
-                  'القاعدة: يتقدم رؤساء البعثات في فئتهم بحسب تاريخ وساعة تولي مهامهم (المادة 16)، ويُحدَّد تاريخ التولي بتقديم أوراق الاعتماد (المادة 13). أما ترتيب الفئات فيتبع المادة 14.',
-                  style: TextStyle(color: AppColors.stone, height: 1.7)),
+              Text(
+                  trc(context, 'prec_rule_text'),
+                  style: TextStyle(color: context.mutedColor, height: 1.7)),
               const SizedBox(height: 10),
               OutlinedButton.icon(
                 icon: const Icon(Icons.share),
-                label: const Text('مشاركة الترتيب'),
-                onPressed: () {
+                label: Text(trc(context, 'prec_share')),
+                onPressed: () async {
                   final lines = _ordered!.asMap().entries.map((e) =>
-                      '${e.key + 1}. ${e.value.name} — ${rankLabel(e.value.rankKey)}${e.value.country.isNotEmpty ? ' (${e.value.country})' : ''}');
-                  Share.share('ترتيب الأسبقية:\n${lines.join('\n')}');
+                      '${e.key + 1}. ${e.value.name} — ${rankLabelTr(context, e.value.rankKey)}${e.value.country.isNotEmpty ? ' (${e.value.country})' : ''}');
+                  try {
+                    await Share.share(
+                        '${trc(context, 'tool_precedence')}:\n${lines.join('\n')}');
+                  } catch (_) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                              content: Text(trc(context, 'prec_share_fail'))));
+                    }
+                  }
                 },
               ),
             ],
@@ -277,7 +356,7 @@ class _SeatingPlansPageState extends State<SeatingPlansPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('مخطط الجلوس')),
+      appBar: AppBar(title: Text(trc(context, 'tool_seating'))),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () async {
           await Navigator.push(context,
@@ -285,12 +364,12 @@ class _SeatingPlansPageState extends State<SeatingPlansPage> {
           _load();
         },
         icon: const Icon(Icons.add),
-        label: const Text('مخطط جديد'),
+        label: Text(trc(context, 'seat_new')),
       ),
       body: _plans.isEmpty
-          ? const EmptyState(
+          ? EmptyState(
               icon: Icons.event_seat,
-              text: 'لا توجد مخططات محفوظة بعد.\nأنشئ مخططًا لمائدة مستديرة أو مستطيلة أو على شكل U.')
+              text: trc(context, 'seat_empty'))
           : ListView.builder(
               padding: const EdgeInsets.all(12),
               itemCount: _plans.length,
@@ -299,15 +378,42 @@ class _SeatingPlansPageState extends State<SeatingPlansPage> {
                 return Card(
                   margin: const EdgeInsets.only(bottom: 8),
                   child: ListTile(
-                    leading: const Icon(Icons.event_seat, color: AppColors.navy),
+                    leading: Icon(Icons.event_seat, color: context.headingColor),
                     title: Text(plan.name,
                         style: const TextStyle(fontWeight: FontWeight.bold)),
                     subtitle: Text(
-                        '${plan.shape} • ${plan.seats} مقاعد • ${plan.updatedAt.split('T').first}'),
+                        '${_shapeLabel(context, plan.shape)} • ${plan.seats} ${trc(context, 'seat_seats')} • ${plan.updatedAt.split('T').first}'),
                     trailing: IconButton(
                       icon: const Icon(Icons.delete_outline, color: Colors.red),
                       onPressed: () async {
-                        await Repo.i.deletePlan(plan.id);
+                        final confirm = await showDialog<bool>(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            title: Text(trc(context, 'seat_delete_title')),
+                            content: Text(trc(context, 'seat_delete_body')
+                                .replaceFirst('{name}', plan.name)),
+                            actions: [
+                              TextButton(
+                                  onPressed: () => Navigator.pop(ctx, false),
+                                  child: Text(trc(context, 'cancel'))),
+                              ElevatedButton(
+                                  onPressed: () => Navigator.pop(ctx, true),
+                                  child: Text(trc(context, 'delete'))),
+                            ],
+                          ),
+                        );
+                        if (confirm != true) return;
+                        try {
+                          await Repo.i.deletePlan(plan.id);
+                        } catch (_) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                    content:
+                                        Text(trc(context, 'seat_delete_fail'))));
+                          }
+                          return;
+                        }
                         _load();
                       },
                     ),
@@ -327,12 +433,16 @@ class _SeatingPlansPageState extends State<SeatingPlansPage> {
 }
 
 class _SeatGuest {
+  static int _nextId = 0;
+  // Stable id so guest cards keep their TextFormField state on reorder/delete.
+  final int id;
   String name, title, country, rankKey;
   _SeatGuest(
       {this.name = '',
       this.title = '',
       this.country = '',
-      this.rankKey = 'ambassador'});
+      this.rankKey = 'ambassador'})
+      : id = _nextId++;
 }
 
 class SeatingEditorPage extends StatefulWidget {
@@ -355,8 +465,12 @@ class _SeatingEditorPageState extends State<SeatingEditorPage> {
     if (widget.plan != null) {
       _planId = widget.plan!.id;
       _nameCtrl.text = widget.plan!.name;
-      _shape = widget.plan!.shape;
-      _seats = widget.plan!.seats;
+      // Defensive: a stored shape/seat count outside the current UI range
+      // would crash the dropdown (value not in items) or draw wrongly.
+      _shape = const ['مستديرة', 'مستطيلة', 'U'].contains(widget.plan!.shape)
+          ? widget.plan!.shape
+          : 'مستديرة';
+      _seats = widget.plan!.seats.clamp(4, 40);
       Repo.i.planAssignments(widget.plan!.id).then((rows) {
         if (!mounted) return;
         setState(() {
@@ -364,6 +478,11 @@ class _SeatingEditorPageState extends State<SeatingEditorPage> {
                 name: (r['guest_name'] ?? '') as String,
                 title: (r['guest_title'] ?? '') as String,
                 country: (r['country'] ?? '') as String,
+                rankKey: (r['rank_category'] as String?)?.isNotEmpty == true &&
+                        precedenceRanks
+                            .any((rk) => rk.$1 == r['rank_category'])
+                    ? r['rank_category'] as String
+                    : 'ambassador',
               )));
         });
       });
@@ -374,6 +493,8 @@ class _SeatingEditorPageState extends State<SeatingEditorPage> {
     final maps = _guests
         .map((g) => {
               'name': g.name,
+              'title': g.title,
+              'country': g.country,
               'rank_category': g.rankKey,
               'credential_date': '',
             })
@@ -383,39 +504,71 @@ class _SeatingEditorPageState extends State<SeatingEditorPage> {
       _guests.clear();
       _guests.addAll(ordered.map((m) => _SeatGuest(
             name: m['name'] as String,
+            title: (m['title'] ?? '') as String,
+            country: (m['country'] ?? '') as String,
             rankKey: m['rank_category'] as String,
           )));
     });
     ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تم الترتيب حسب الأسبقية الدبلوماسية')));
+        SnackBar(content: Text(trc(context, 'seat_arranged'))));
   }
 
   Future<void> _save() async {
     if (_nameCtrl.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('أدخل اسمًا للمخطط أولًا')));
+          SnackBar(content: Text(trc(context, 'seat_need_name'))));
       return;
     }
+    // Blank-name guests would be saved as empty seats: drop them and say so.
+    final toSave =
+        _guests.where((g) => g.name.trim().isNotEmpty).toList();
+    final dropped = _guests.length - toSave.length;
+    if (dropped > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(trc(context, 'seat_ignored')
+              .replaceFirst('{n}', '$dropped'))));
+    }
+    if (toSave.length > _seats) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(trc(context, 'seat_too_many')
+              .replaceFirst('{n}', '${toSave.length}')
+              .replaceFirst('{seats}', '$_seats'))));
+    }
     final now = DateTime.now().toIso8601String();
-    _planId ??= await Repo.i.insertPlan({
-      'name': _nameCtrl.text.trim(),
-      'shape': _shape,
-      'seats': _seats,
-      'created_at': now,
-      'updated_at': now,
-    });
-    await Repo.i.saveAssignments(
-      _planId!,
-      _guests.asMap().entries.map((e) => {
-            'seat_index': e.key + 1,
-            'guest_name': e.value.name,
-            'guest_title': e.value.title,
-            'country': e.value.country,
-          }).toList(),
-    );
+    try {
+      // Repo has no updatePlan: re-saving an edited plan deletes the old row
+      // and inserts the new values, otherwise name/shape/seats edits are lost.
+      if (_planId != null) {
+        await Repo.i.deletePlan(_planId!);
+        _planId = null;
+      }
+      _planId = await Repo.i.insertPlan({
+        'name': _nameCtrl.text.trim(),
+        'shape': _shape,
+        'seats': _seats,
+        'created_at': now,
+        'updated_at': now,
+      });
+      await Repo.i.saveAssignments(
+        _planId!,
+        toSave.asMap().entries.map((e) => {
+              'seat_index': e.key + 1,
+              'guest_name': e.value.name,
+              'guest_title': e.value.title,
+              'country': e.value.country,
+              'rank_category': e.value.rankKey,
+            }).toList(),
+      );
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(trc(context, 'seat_save_fail'))));
+      }
+      return;
+    }
     if (mounted) {
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('تم حفظ المخطط')));
+          .showSnackBar(SnackBar(content: Text(trc(context, 'seat_saved'))));
       Navigator.pop(context);
     }
   }
@@ -437,8 +590,8 @@ class _SeatingEditorPageState extends State<SeatingEditorPage> {
               border: Border.all(color: AppColors.gold, width: 3),
             ),
             alignment: Alignment.center,
-            child: const Text('المائدة',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            child: Text(trc(context, 'seat_table'),
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           ),
           ...shown.asMap().entries.map((e) {
             final angle = (e.key / shown.length) * 2 * math.pi - math.pi / 2;
@@ -453,9 +606,14 @@ class _SeatingEditorPageState extends State<SeatingEditorPage> {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
                 decoration: BoxDecoration(
-                  color: e.key == 0 ? AppColors.gold : Colors.white,
+                  color: e.key == 0
+                      ? AppColors.gold
+                      : (context.isDark ? AppColors.darkCard : Colors.white),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppColors.navy),
+                  border: Border.all(
+                      color: context.isDark
+                          ? AppColors.darkBorder
+                          : AppColors.navy),
                 ),
                 child: Text(
                   '${e.key + 1}. ${g.name.isEmpty ? '—' : g.name}',
@@ -464,6 +622,7 @@ class _SeatingEditorPageState extends State<SeatingEditorPage> {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                       fontSize: 10,
+                      color: AppColors.navy,
                       fontWeight:
                           e.key == 0 ? FontWeight.bold : FontWeight.normal),
                 ),
@@ -490,12 +649,16 @@ class _SeatingEditorPageState extends State<SeatingEditorPage> {
               padding:
                   const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
               decoration: BoxDecoration(
-                color: idx == 0 ? AppColors.gold : Colors.white,
+                color: idx == 0
+                    ? AppColors.gold
+                    : (context.isDark ? AppColors.darkCard : Colors.white),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: AppColors.navy),
+                border: Border.all(
+                    color:
+                        context.isDark ? AppColors.darkBorder : AppColors.navy),
               ),
               child: Text('${idx + 1}. ${g.name.isEmpty ? '—' : g.name}',
-                  style: const TextStyle(fontSize: 11)),
+                  style: const TextStyle(fontSize: 11, color: AppColors.navy)),
             );
           }).toList(),
         );
@@ -512,7 +675,9 @@ class _SeatingEditorPageState extends State<SeatingEditorPage> {
           ),
           alignment: Alignment.center,
           child: Text(
-              _shape == 'مستطيلة' ? 'المائدة المستطيلة' : 'المائدة (شكل U)',
+              _shape == 'مستطيلة'
+                  ? trc(context, 'seat_table_rect')
+                  : trc(context, 'seat_table_u'),
               style: const TextStyle(color: Colors.white)),
         ),
         row(bottom, half),
@@ -530,13 +695,13 @@ class _SeatingEditorPageState extends State<SeatingEditorPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('مخطط الجلوس'),
+        title: Text(trc(context, 'tool_seating')),
         actions: [
           TextButton.icon(
             onPressed: _save,
             icon: const Icon(Icons.save, color: Colors.white, size: 18),
             label:
-                const Text('حفظ', style: TextStyle(color: Colors.white)),
+                Text(trc(context, 'save'), style: const TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -547,7 +712,7 @@ class _SeatingEditorPageState extends State<SeatingEditorPage> {
           children: [
             TextField(
               controller: _nameCtrl,
-              decoration: const InputDecoration(labelText: 'اسم المخطط'),
+              decoration: InputDecoration(labelText: trc(context, 'seat_name')),
             ),
             const SizedBox(height: 10),
             Row(
@@ -556,10 +721,10 @@ class _SeatingEditorPageState extends State<SeatingEditorPage> {
                   child: DropdownButtonFormField<String>(
                     key: ValueKey(_shape),
                     initialValue: _shape,
-                    decoration: const InputDecoration(labelText: 'شكل المائدة'),
+                    decoration: InputDecoration(labelText: trc(context, 'seat_shape')),
                     items: const ['مستديرة', 'مستطيلة', 'U']
-                        .map((s) =>
-                            DropdownMenuItem(value: s, child: Text(s)))
+                        .map((s) => DropdownMenuItem(
+                            value: s, child: Text(_shapeLabel(context, s))))
                         .toList(),
                     onChanged: (v) => setState(() => _shape = v ?? 'مستديرة'),
                   ),
@@ -568,18 +733,18 @@ class _SeatingEditorPageState extends State<SeatingEditorPage> {
                 Expanded(
                   child: Row(
                     children: [
-                      const Text('المقاعد:'),
+                      Text(trc(context, 'seat_seats_label')),
                       IconButton(
                         icon: const Icon(Icons.remove_circle_outline),
                         onPressed: () => setState(
-                            () => _seats = (_seats - 2).clamp(4, 40)),
+                            () => _seats = (_seats - 1).clamp(4, 40)),
                       ),
                       Text('$_seats',
                           style: const TextStyle(fontWeight: FontWeight.bold)),
                       IconButton(
                         icon: const Icon(Icons.add_circle_outline),
                         onPressed: () => setState(
-                            () => _seats = (_seats + 2).clamp(4, 40)),
+                            () => _seats = (_seats + 1).clamp(4, 40)),
                       ),
                     ],
                   ),
@@ -589,18 +754,24 @@ class _SeatingEditorPageState extends State<SeatingEditorPage> {
             const SizedBox(height: 12),
             Center(
                 child: _shape == 'مستديرة' ? _roundTable() : _rowsTable()),
+            if (_guests.isEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(trc(context, 'seat_no_guests'),
+                    style: TextStyle(color: context.mutedColor)),
+              ),
             const SizedBox(height: 8),
             Row(
               children: [
                 ElevatedButton.icon(
                   icon: const Icon(Icons.sort),
-                  label: const Text('ترتيب تلقائي حسب الأسبقية'),
+                  label: Text(trc(context, 'seat_auto')),
                   onPressed: _guests.isEmpty ? null : _autoArrange,
                 ),
                 const SizedBox(width: 8),
                 OutlinedButton.icon(
                   icon: const Icon(Icons.add),
-                  label: const Text('إضافة ضيف'),
+                  label: Text(trc(context, 'seat_add_guest')),
                   onPressed: () =>
                       setState(() => _guests.add(_SeatGuest())),
                 ),
@@ -611,15 +782,16 @@ class _SeatingEditorPageState extends State<SeatingEditorPage> {
               final i = e.key;
               final g = e.value;
               return Card(
+                key: ValueKey('guest-${g.id}'),
                 margin: const EdgeInsets.only(bottom: 6),
                 child: Padding(
                   padding: const EdgeInsets.all(8),
                   child: Row(
                     children: [
                       Text('${i + 1}',
-                          style: const TextStyle(
+                          style: TextStyle(
                               fontWeight: FontWeight.bold,
-                              color: AppColors.navy)),
+                              color: context.headingColor)),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Column(
@@ -627,7 +799,8 @@ class _SeatingEditorPageState extends State<SeatingEditorPage> {
                             TextFormField(
                               initialValue: g.name,
                               decoration:
-                                  const InputDecoration(labelText: 'اسم الضيف'),
+                                  InputDecoration(
+                                      labelText: trc(context, 'seat_guest_name')),
                               onChanged: (v) => g.name = v,
                             ),
                             Row(
@@ -636,12 +809,13 @@ class _SeatingEditorPageState extends State<SeatingEditorPage> {
                                   child: DropdownButtonFormField<String>(
                                     key: ValueKey(g.rankKey),
                                     initialValue: g.rankKey,
-                                    decoration: const InputDecoration(
-                                        labelText: 'الفئة'),
+                                    decoration: InputDecoration(
+                                        labelText: trc(context, 'prec_category')),
                                     items: precedenceRanks
                                         .map((r) => DropdownMenuItem(
                                             value: r.$1,
-                                            child: Text(r.$2,
+                                            child: Text(
+                                                rankLabelTr(context, r.$1),
                                                 overflow:
                                                     TextOverflow.ellipsis)))
                                         .toList(),
@@ -653,8 +827,8 @@ class _SeatingEditorPageState extends State<SeatingEditorPage> {
                                 Expanded(
                                   child: TextFormField(
                                     initialValue: g.country,
-                                    decoration: const InputDecoration(
-                                        labelText: 'الدولة'),
+                                    decoration: InputDecoration(
+                                        labelText: trc(context, 'prec_country')),
                                     onChanged: (v) => g.country = v,
                                   ),
                                 ),
@@ -735,36 +909,44 @@ class _EventsPageState extends State<EventsPage> {
     String type = eventTypes.first;
     DateTime date = DateTime.now().add(const Duration(days: 7));
     int guests = 50;
+    String? titleError;
+    String? placeError;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setD) => AlertDialog(
-          title: const Text('مناسبة جديدة'),
+          scrollable: true,
+          title: Text(trc(context, 'event_new')),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 TextField(
                     controller: titleCtrl,
-                    decoration: const InputDecoration(labelText: 'اسم المناسبة')),
+                    decoration: InputDecoration(
+                        labelText: trc(context, 'event_title_label'),
+                        errorText: titleError)),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
                   key: ValueKey(type),
                   initialValue: type,
-                  decoration: const InputDecoration(labelText: 'نوع المناسبة'),
+                  decoration: InputDecoration(labelText: trc(context, 'event_type')),
                   items: eventTypes
-                      .map((t) => DropdownMenuItem(value: t, child: Text(t)))
+                      .map((t) => DropdownMenuItem(
+                          value: t, child: Text(_eventTypeLabel(context, t))))
                       .toList(),
                   onChanged: (v) => setD(() => type = v ?? type),
                 ),
                 const SizedBox(height: 8),
                 TextField(
                     controller: placeCtrl,
-                    decoration: const InputDecoration(labelText: 'المكان')),
+                    decoration: InputDecoration(
+                        labelText: trc(context, 'event_place'),
+                        errorText: placeError)),
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    const Text('التاريخ:'),
+                    Text(trc(context, 'event_date')),
                     const SizedBox(width: 8),
                     TextButton(
                       child: Text(
@@ -783,7 +965,7 @@ class _EventsPageState extends State<EventsPage> {
                 ),
                 Row(
                   children: [
-                    const Text('عدد الضيوف المتوقع:'),
+                    Text(trc(context, 'event_guests_expected')),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Slider(
@@ -804,22 +986,46 @@ class _EventsPageState extends State<EventsPage> {
           actions: [
             TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('إلغاء')),
+                child: Text(trc(context, 'cancel'))),
             ElevatedButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('إنشاء')),
+                onPressed: () {
+                  // Validate inside the dialog: an empty title/place used to
+                  // close the dialog silently and create nothing.
+                  setD(() {
+                    titleError = titleCtrl.text.trim().isEmpty
+                        ? trc(context, 'event_need_title')
+                        : null;
+                    placeError = placeCtrl.text.trim().isEmpty
+                        ? trc(context, 'event_need_place')
+                        : null;
+                  });
+                  if (titleError == null && placeError == null) {
+                    Navigator.pop(ctx, true);
+                  }
+                },
+                child: Text(trc(context, 'event_create'))),
           ],
         ),
       ),
     );
-    if (ok != true || titleCtrl.text.trim().isEmpty) return;
+    if (ok != true) {
+      titleCtrl.dispose();
+      placeCtrl.dispose();
+      return;
+    }
+    // Read values now; the controllers are disposed below.
+    final title = titleCtrl.text.trim();
+    final place = placeCtrl.text.trim();
+    titleCtrl.dispose();
+    placeCtrl.dispose();
+    if (title.isEmpty || place.isEmpty) return;
     final dateStr =
         '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
     final id = await Repo.i.insertEvent({
-      'title': titleCtrl.text.trim(),
+      'title': title,
       'type': type,
       'date': dateStr,
-      'place': placeCtrl.text.trim(),
+      'place': place,
       'guests_expected': guests,
       'notes': '',
       'created_at': DateTime.now().toIso8601String(),
@@ -848,14 +1054,17 @@ class _EventsPageState extends State<EventsPage> {
       });
     }
     // Reminder on the event day at 09:00 (if notifications are on).
+    // A notification failure must not break event creation.
     final notifOn = await Repo.i.getSetting('notif_events', '1');
     if (notifOn == '1') {
-      await NotificationService.schedule(
-        id: 10000 + id,
-        title: 'مناسبة اليوم: ${titleCtrl.text.trim()}',
-        body: 'تبدأ اليوم في ${placeCtrl.text.trim()} — راجع قائمة التحقق.',
-        when: DateTime(date.year, date.month, date.day, 9),
-      );
+      try {
+        await NotificationService.schedule(
+          id: 10000 + id,
+          title: 'مناسبة اليوم: $title',
+          body: 'تبدأ اليوم في $place — راجع قائمة التحقق.',
+          when: DateTime(date.year, date.month, date.day, 9),
+        );
+      } catch (_) {}
     }
     if (mounted) {
       _load();
@@ -868,16 +1077,16 @@ class _EventsPageState extends State<EventsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('منظم المناسبات')),
+      appBar: AppBar(title: Text(trc(context, 'events_title'))),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _create,
         icon: const Icon(Icons.add),
-        label: const Text('مناسبة جديدة'),
+        label: Text(trc(context, 'event_new')),
       ),
       body: _events.isEmpty
-          ? const EmptyState(
+          ? EmptyState(
               icon: Icons.event,
-              text: 'لا توجد مناسبات بعد.\nأنشئ مناسبة وسيُنشأ لها برنامج وقائمة تحقق وتذكير تلقائيًا.')
+              text: trc(context, 'event_empty'))
           : ListView.builder(
               padding: const EdgeInsets.all(12),
               itemCount: _events.length,
@@ -886,15 +1095,42 @@ class _EventsPageState extends State<EventsPage> {
                 return Card(
                   margin: const EdgeInsets.only(bottom: 8),
                   child: ListTile(
-                    leading: const Icon(Icons.event, color: AppColors.navy),
+                    leading: Icon(Icons.event, color: context.headingColor),
                     title: Text(e.title,
                         style: const TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: Text('${e.type} • ${e.date} • ${e.place}'),
+                    subtitle: Text('${_eventTypeLabel(context, e.type)} • ${e.date} • ${e.place}'),
                     trailing: IconButton(
                       icon: const Icon(Icons.delete_outline, color: Colors.red),
                       onPressed: () async {
-                        await Repo.i.deleteEvent(e.id);
-                        await NotificationService.cancel(10000 + e.id);
+                        final confirm = await showDialog<bool>(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            title: Text(trc(context, 'event_delete_title')),
+                            content: Text(trc(context, 'event_delete_body')
+                                .replaceFirst('{name}', e.title)),
+                            actions: [
+                              TextButton(
+                                  onPressed: () => Navigator.pop(ctx, false),
+                                  child: Text(trc(context, 'cancel'))),
+                              ElevatedButton(
+                                  onPressed: () => Navigator.pop(ctx, true),
+                                  child: Text(trc(context, 'delete'))),
+                            ],
+                          ),
+                        );
+                        if (confirm != true) return;
+                        try {
+                          await Repo.i.deleteEvent(e.id);
+                          await NotificationService.cancel(10000 + e.id);
+                        } catch (_) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                    content:
+                                        Text(trc(context, 'event_delete_fail'))));
+                          }
+                          return;
+                        }
                         _load();
                       },
                     ),
@@ -951,49 +1187,67 @@ class _EventDetailPageState extends State<EventDetailPage> {
     final nameCtrl = TextEditingController();
     String rank = 'ambassador';
     final countryCtrl = TextEditingController();
+    String? nameError;
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('إضافة ضيف'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-                controller: nameCtrl,
-                decoration: const InputDecoration(labelText: 'اسم الضيف')),
-            const SizedBox(height: 8),
-            DropdownButtonFormField<String>(
-              key: ValueKey(rank),
-              initialValue: rank,
-              decoration: const InputDecoration(labelText: 'الفئة'),
-              items: precedenceRanks
-                  .map((r) =>
-                      DropdownMenuItem(value: r.$1, child: Text(r.$2)))
-                  .toList(),
-              onChanged: (v) => rank = v ?? rank,
-            ),
-            const SizedBox(height: 8),
-            TextField(
-                controller: countryCtrl,
-                decoration: const InputDecoration(labelText: 'الدولة')),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) => AlertDialog(
+          scrollable: true,
+          title: Text(trc(context, 'guest_add_title')),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                  controller: nameCtrl,
+                  decoration: InputDecoration(
+                      labelText: trc(context, 'seat_guest_name'),
+                      errorText: nameError)),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                key: ValueKey(rank),
+                initialValue: rank,
+                decoration: InputDecoration(labelText: trc(context, 'prec_category')),
+                items: precedenceRanks
+                    .map((r) => DropdownMenuItem(
+                        value: r.$1, child: Text(rankLabelTr(context, r.$1))))
+                    .toList(),
+                // StatefulBuilder rebuilds the dialog so the new rank shows.
+                onChanged: (v) => setD(() => rank = v ?? rank),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                  controller: countryCtrl,
+                  decoration: InputDecoration(labelText: trc(context, 'prec_country'))),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: Text(trc(context, 'cancel'))),
+            ElevatedButton(
+                onPressed: () {
+                  // Empty name used to close the dialog silently, adding
+                  // nothing; keep the dialog open with a visible error.
+                  setD(() => nameError = nameCtrl.text.trim().isEmpty
+                      ? trc(context, 'guest_need_name')
+                      : null);
+                  if (nameError == null) Navigator.pop(ctx, true);
+                },
+                child: Text(trc(context, 'guest_add'))),
           ],
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('إلغاء')),
-          ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('إضافة')),
-        ],
       ),
     );
-    if (ok != true || nameCtrl.text.trim().isEmpty) return;
+    final name = nameCtrl.text.trim();
+    final country = countryCtrl.text.trim();
+    nameCtrl.dispose();
+    countryCtrl.dispose();
+    if (ok != true || name.isEmpty) return;
     await Repo.i.insertEventGuest({
       'event_id': widget.eventId,
-      'name': nameCtrl.text.trim(),
+      'name': name,
       'title': rankLabel(rank),
-      'country': countryCtrl.text.trim(),
+      'country': country,
       'rank_category': rank,
       'credential_date': '',
       'sort_order': _guests.length,
@@ -1004,37 +1258,65 @@ class _EventDetailPageState extends State<EventDetailPage> {
   Future<void> _addProgram() async {
     final timeCtrl = TextEditingController(text: '10:00');
     final titleCtrl = TextEditingController();
+    String? timeError;
+    String? titleError;
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('إضافة فقرة للبرنامج'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-                controller: timeCtrl,
-                decoration: const InputDecoration(labelText: 'الوقت')),
-            const SizedBox(height: 8),
-            TextField(
-                controller: titleCtrl,
-                decoration: const InputDecoration(labelText: 'عنوان الفقرة')),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) => AlertDialog(
+          scrollable: true,
+          title: Text(trc(context, 'program_add_title')),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                  controller: timeCtrl,
+                  decoration: InputDecoration(
+                      labelText: trc(context, 'program_time'), hintText: '10:00',
+                      errorText: timeError)),
+              const SizedBox(height: 8),
+              TextField(
+                  controller: titleCtrl,
+                  decoration: InputDecoration(
+                      labelText: trc(context, 'program_item_title'),
+                      errorText: titleError)),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: Text(trc(context, 'cancel'))),
+            ElevatedButton(
+                onPressed: () {
+                  setD(() {
+                    final t = timeCtrl.text.trim();
+                    timeError = t.isEmpty
+                        ? trc(context, 'program_need_time')
+                        : !RegExp(r'^\d{1,2}:\d{2}$').hasMatch(t)
+                            ? trc(context, 'program_time_format')
+                            : null;
+                    titleError = titleCtrl.text.trim().isEmpty
+                        ? trc(context, 'program_need_title')
+                        : null;
+                  });
+                  if (timeError == null && titleError == null) {
+                    Navigator.pop(ctx, true);
+                  }
+                },
+                child: Text(trc(context, 'guest_add'))),
           ],
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('إلغاء')),
-          ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('إضافة')),
-        ],
       ),
     );
-    if (ok != true || titleCtrl.text.trim().isEmpty) return;
+    final time = timeCtrl.text.trim();
+    final title = titleCtrl.text.trim();
+    timeCtrl.dispose();
+    titleCtrl.dispose();
+    if (ok != true || title.isEmpty || time.isEmpty) return;
     await Repo.i.insertProgramItem({
       'event_id': widget.eventId,
-      'time': timeCtrl.text.trim(),
-      'title': titleCtrl.text.trim(),
+      'time': time,
+      'title': title,
       'notes': '',
       'sort_order': _program.length,
     });
@@ -1043,27 +1325,40 @@ class _EventDetailPageState extends State<EventDetailPage> {
 
   Future<void> _addChecklist() async {
     final ctrl = TextEditingController();
+    String? textError;
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('إضافة بند لقائمة التحقق'),
-        content: TextField(
-            controller: ctrl,
-            decoration: const InputDecoration(labelText: 'البند')),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('إلغاء')),
-          ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('إضافة')),
-        ],
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) => AlertDialog(
+          scrollable: true,
+          title: Text(trc(context, 'checklist_add_title')),
+          content: TextField(
+              controller: ctrl,
+              decoration: InputDecoration(
+                  labelText: trc(context, 'checklist_item'),
+                  errorText: textError)),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: Text(trc(context, 'cancel'))),
+            ElevatedButton(
+                onPressed: () {
+                  setD(() => textError = ctrl.text.trim().isEmpty
+                      ? trc(context, 'checklist_need_text')
+                      : null);
+                  if (textError == null) Navigator.pop(ctx, true);
+                },
+                child: Text(trc(context, 'guest_add'))),
+          ],
+        ),
       ),
     );
-    if (ok != true || ctrl.text.trim().isEmpty) return;
+    final text = ctrl.text.trim();
+    ctrl.dispose();
+    if (ok != true || text.isEmpty) return;
     await Repo.i.insertChecklistItem({
       'event_id': widget.eventId,
-      'text': ctrl.text.trim(),
+      'text': text,
       'done': 0,
       'sort_order': _checklist.length,
     });
@@ -1075,7 +1370,7 @@ class _EventDetailPageState extends State<EventDetailPage> {
     final e = _event;
     if (e == null) {
       return Scaffold(
-          appBar: AppBar(title: const Text('المناسبة')),
+          appBar: AppBar(title: Text(trc(context, 'event_detail_title'))),
           body: const Center(child: CircularProgressIndicator()));
     }
     return DefaultTabController(
@@ -1083,17 +1378,17 @@ class _EventDetailPageState extends State<EventDetailPage> {
       child: Scaffold(
         appBar: AppBar(
           title: Text(e.title),
-          bottom: const TabBar(
+          bottom: TabBar(
             tabs: [
-              Tab(text: 'الضيوف'),
-              Tab(text: 'البرنامج'),
-              Tab(text: 'قائمة التحقق'),
+              Tab(text: trc(context, 'tab_guests')),
+              Tab(text: trc(context, 'tab_program')),
+              Tab(text: trc(context, 'tab_checklist')),
             ],
           ),
           actions: [
             IconButton(
               icon: const Icon(Icons.fact_check),
-              tooltip: 'تدقيق البروتوكول',
+              tooltip: trc(context, 'event_check_protocol'),
               onPressed: () => Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -1115,7 +1410,7 @@ class _EventDetailPageState extends State<EventDetailPage> {
                   Expanded(
                       child: Text(e.place,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: AppColors.stone))),
+                          style: TextStyle(color: context.mutedColor))),
                 ],
               ),
             ),
@@ -1141,12 +1436,13 @@ class _EventDetailPageState extends State<EventDetailPage> {
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Row(
             children: [
-              Text('الضيوف (${_guests.length})',
+              Text(trc(context, 'guests_count')
+                  .replaceFirst('{n}', '${_guests.length}'),
                   style: const TextStyle(fontWeight: FontWeight.bold)),
               const Spacer(),
               OutlinedButton.icon(
                 icon: const Icon(Icons.add, size: 16),
-                label: const Text('إضافة ضيف'),
+                label: Text(trc(context, 'seat_add_guest')),
                 onPressed: _addGuest,
               ),
             ],
@@ -1154,8 +1450,8 @@ class _EventDetailPageState extends State<EventDetailPage> {
         ),
         Expanded(
           child: _guests.isEmpty
-              ? const EmptyState(
-                  icon: Icons.groups, text: 'لا يوجد ضيوف بعد.')
+              ? EmptyState(
+                  icon: Icons.groups, text: trc(context, 'guests_empty'))
               : ListView.builder(
                   itemCount: _guests.length,
                   itemBuilder: (ctx, i) {
@@ -1192,12 +1488,12 @@ class _EventDetailPageState extends State<EventDetailPage> {
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Row(
             children: [
-              const Text('برنامج المناسبة',
-                  style: TextStyle(fontWeight: FontWeight.bold)),
+              Text(trc(context, 'program_title'),
+                  style: const TextStyle(fontWeight: FontWeight.bold)),
               const Spacer(),
               OutlinedButton.icon(
                 icon: const Icon(Icons.add, size: 16),
-                label: const Text('إضافة فقرة'),
+                label: Text(trc(context, 'program_add')),
                 onPressed: _addProgram,
               ),
             ],
@@ -1205,8 +1501,8 @@ class _EventDetailPageState extends State<EventDetailPage> {
         ),
         Expanded(
           child: _program.isEmpty
-              ? const EmptyState(
-                  icon: Icons.schedule, text: 'لا توجد فقرات بعد.')
+              ? EmptyState(
+                  icon: Icons.schedule, text: trc(context, 'program_empty'))
               : ListView.builder(
                   itemCount: _program.length,
                   itemBuilder: (ctx, i) {
@@ -1239,22 +1535,27 @@ class _EventDetailPageState extends State<EventDetailPage> {
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Row(
             children: [
-              Text('قائمة التحقق ($done/${_checklist.length})',
+              Text(trc(context, 'checklist_count')
+                .replaceFirst('{done}', '$done')
+                .replaceFirst('{total}', '${_checklist.length}'),
                   style: const TextStyle(fontWeight: FontWeight.bold)),
               const Spacer(),
               OutlinedButton.icon(
                 icon: const Icon(Icons.add, size: 16),
-                label: const Text('إضافة بند'),
+                label: Text(trc(context, 'checklist_add')),
                 onPressed: _addChecklist,
               ),
             ],
           ),
         ),
         Expanded(
-          child: ListView.builder(
-            itemCount: _checklist.length,
-            itemBuilder: (ctx, i) {
-              final c = _checklist[i];
+          child: _checklist.isEmpty
+              ? EmptyState(
+                  icon: Icons.checklist, text: trc(context, 'checklist_empty'))
+              : ListView.builder(
+                  itemCount: _checklist.length,
+                  itemBuilder: (ctx, i) {
+                    final c = _checklist[i];
               final isDone = (c['done'] as int) == 1;
               return CheckboxListTile(
                 value: isDone,
@@ -1298,6 +1599,8 @@ class _DocGeneratorPageState extends State<DocGeneratorPage> {
   TemplateDoc? _selected;
   final Map<String, TextEditingController> _fields = {};
   String _preview = '';
+  bool _loaded = false;
+  bool _exporting = false;
 
   @override
   void initState() {
@@ -1310,10 +1613,15 @@ class _DocGeneratorPageState extends State<DocGeneratorPage> {
     if (!mounted) return;
     setState(() {
       _templates = tpls;
-      if (widget.templateKey != null) {
-        _selected = tpls.firstWhere(
-            (t) => t.key == widget.templateKey,
-            orElse: () => tpls.first);
+      _loaded = true;
+      // tpls.first would throw on an empty table; and a templateKey that
+      // matches nothing must not crash the dropdown either.
+      if (tpls.isNotEmpty) {
+        if (widget.templateKey != null) {
+          _selected = tpls.firstWhere(
+              (t) => t.key == widget.templateKey,
+              orElse: () => tpls.first);
+        }
       }
     });
     if (_selected != null) _rebuildFields();
@@ -1327,12 +1635,87 @@ class _DocGeneratorPageState extends State<DocGeneratorPage> {
     }
     _fields.clear();
     final t = _selected;
-    if (t == null) return;
+    if (t == null) {
+      setState(() => _preview = '');
+      return;
+    }
     for (final m in _ph.allMatches(t.bodyAr)) {
       final key = m.group(1)!.trim();
       _fields.putIfAbsent(key, () => TextEditingController());
     }
     _updatePreview();
+  }
+
+  /// Names of template fields still empty — every placeholder is required
+  /// before generating, copying, or sharing, so no `{{...}}` leaks out.
+  List<String> _missingFields() => _fields.entries
+      .where((e) => e.value.text.trim().isEmpty)
+      .map((e) => e.key)
+      .toList();
+
+  void _showMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _exportPdf() async {
+    if (_selected == null || _exporting) return;
+    // Resolve strings before the first await (context after an async gap).
+    final missingExport = trc(context, 'docs_missing_export');
+    final pdfFail = trc(context, 'docs_pdf_fail');
+    final sep = _listSep(context);
+    _updatePreview();
+    final missing = _missingFields();
+    if (missing.isNotEmpty) {
+      _showMessage(missingExport
+          .replaceFirst('{fields}', missing.join(sep)));
+      return;
+    }
+    setState(() => _exporting = true);
+    try {
+      await sharePdf(
+          'marasim_${_selected!.key}.pdf', _selected!.titleAr, _preview);
+    } catch (_) {
+      _showMessage(pdfFail);
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
+  Future<void> _copyText() async {
+    if (_selected == null) return;
+    final missingCopy = trc(context, 'docs_missing_copy');
+    final copied = trc(context, 'docs_copied');
+    final sep = _listSep(context);
+    _updatePreview();
+    final missing = _missingFields();
+    if (missing.isNotEmpty) {
+      _showMessage(missingCopy
+          .replaceFirst('{fields}', missing.join(sep)));
+      return;
+    }
+    await Clipboard.setData(ClipboardData(text: _preview));
+    _showMessage(copied);
+  }
+
+  Future<void> _shareText() async {
+    if (_selected == null) return;
+    final missingShare = trc(context, 'docs_missing_share');
+    final shareFail = trc(context, 'docs_share_fail');
+    final sep = _listSep(context);
+    _updatePreview();
+    final missing = _missingFields();
+    if (missing.isNotEmpty) {
+      _showMessage(missingShare
+          .replaceFirst('{fields}', missing.join(sep)));
+      return;
+    }
+    try {
+      await Share.share('${_selected!.titleAr}\n\n$_preview');
+    } catch (_) {
+      _showMessage(shareFail);
+    }
   }
 
   void _updatePreview() {
@@ -1356,10 +1739,14 @@ class _DocGeneratorPageState extends State<DocGeneratorPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('مولد المستندات')),
-      body: _templates.isEmpty
+      appBar: AppBar(title: Text(trc(context, 'docs_title'))),
+      body: !_loaded
           ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
+          : _templates.isEmpty
+              ? EmptyState(
+                  icon: Icons.description,
+                  text: trc(context, 'docs_empty'))
+              : SingleChildScrollView(
               padding: const EdgeInsets.all(14),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1368,7 +1755,7 @@ class _DocGeneratorPageState extends State<DocGeneratorPage> {
                     key: ValueKey(_selected?.key),
                     initialValue: _selected?.key,
                     decoration:
-                        const InputDecoration(labelText: 'اختر النموذج'),
+                        InputDecoration(labelText: trc(context, 'docs_choose')),
                     items: _templates
                         .map((t) => DropdownMenuItem(
                             value: t.key, child: Text(t.titleAr)))
@@ -1393,7 +1780,7 @@ class _DocGeneratorPageState extends State<DocGeneratorPage> {
                           ),
                         )),
                     const SizedBox(height: 8),
-                    const SectionHeader(title: 'المعاينة'),
+                    SectionHeader(title: trc(context, 'docs_preview')),
                     const SizedBox(height: 6),
                     Card(
                       child: Padding(
@@ -1407,44 +1794,34 @@ class _DocGeneratorPageState extends State<DocGeneratorPage> {
                       children: [
                         ElevatedButton.icon(
                           icon: const Icon(Icons.picture_as_pdf),
-                          label: const Text('تصدير PDF'),
-                          onPressed: _preview.isEmpty
+                          label: Text(trc(context, 'docs_export_pdf')),
+                          onPressed: _preview.isEmpty || _exporting
                               ? null
-                              : () => sharePdf(
-                                  'marasim_${_selected!.key}.pdf',
-                                  _selected!.titleAr,
-                                  _preview),
+                              : _exportPdf,
                         ),
                         const SizedBox(width: 8),
                         OutlinedButton.icon(
                           icon: const Icon(Icons.copy),
-                          label: const Text('نسخ النص'),
-                          onPressed: _preview.isEmpty
+                          label: Text(trc(context, 'docs_copy')),
+                          onPressed: _preview.isEmpty || _exporting
                               ? null
-                              : () {
-                                  Clipboard.setData(
-                                      ClipboardData(text: _preview));
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                          content: Text('تم نسخ النص')));
-                                },
+                              : _copyText,
                         ),
                         const SizedBox(width: 8),
                         OutlinedButton.icon(
                           icon: const Icon(Icons.share),
-                          label: const Text('مشاركة'),
-                          onPressed: _preview.isEmpty
+                          label: Text(trc(context, 'docs_share')),
+                          onPressed: _preview.isEmpty || _exporting
                               ? null
-                              : () => Share.share(
-                                  '${_selected!.titleAr}\n\n$_preview'),
+                              : _shareText,
                         ),
                       ],
                     ),
                     const SizedBox(height: 10),
-                    const Text(
-                        'ملاحظة: تصدير DOCX غير متوفر في هذه النسخة (سيُضاف لاحقًا) — التصدير المتاح هو PDF.',
+                    Text(
+                        trc(context, 'docs_docx_note'),
                         style:
-                            TextStyle(fontSize: 12, color: AppColors.stone)),
+                            TextStyle(fontSize: 12, color: context.mutedColor)),
                   ],
                 ],
               ),
@@ -1475,11 +1852,11 @@ class _CheckerPickerPageState extends State<CheckerPickerPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('مدقق البروتوكول')),
+      appBar: AppBar(title: Text(trc(context, 'tool_checker'))),
       body: _events.isEmpty
-          ? const EmptyState(
+          ? EmptyState(
               icon: Icons.fact_check,
-              text: 'لا توجد مناسبات محفوظة لتدقيقها.\nأنشئ مناسبة أولًا من منظم المناسبات.')
+              text: trc(context, 'checker_empty'))
           : ListView.builder(
               padding: const EdgeInsets.all(12),
               itemCount: _events.length,
@@ -1488,8 +1865,8 @@ class _CheckerPickerPageState extends State<CheckerPickerPage> {
                 return Card(
                   margin: const EdgeInsets.only(bottom: 8),
                   child: ListTile(
-                    leading: const Icon(Icons.fact_check,
-                        color: AppColors.navy),
+                    leading: Icon(Icons.fact_check,
+                        color: context.headingColor),
                     title: Text(e.title,
                         style: const TextStyle(fontWeight: FontWeight.bold)),
                     subtitle: Text('${e.type} • ${e.date}'),
@@ -1540,8 +1917,43 @@ class _CheckerPageState extends State<CheckerPage> {
   }
 
   Future<void> _run() async {
+    // Resolve every UI string before the first await: using context
+    // after an async gap would warn, and the widget may be disposed.
+    final tNoProgram = trc(context, 'chk_no_program');
+    final tNoProgramDetail = trc(context, 'chk_no_program_detail');
+    final tNoProgramRule = trc(context, 'chk_no_program_rule');
+    final tNoProgramRec = trc(context, 'chk_no_program_rec');
+    final tNoReception = trc(context, 'chk_no_reception');
+    final tNoReceptionDetail = trc(context, 'chk_no_reception_detail');
+    final tNoReceptionRule = trc(context, 'chk_no_reception_rule');
+    final tNoReceptionRec = trc(context, 'chk_no_reception_rec');
+    final tNoRank = trc(context, 'chk_no_rank');
+    final tNoRankDetail = trc(context, 'chk_no_rank_detail');
+    final tNoRankRule = trc(context, 'chk_no_rank_rule');
+    final tNoRankRec = trc(context, 'chk_no_rank_rec');
+    final tNotOrdered = trc(context, 'chk_not_ordered');
+    final tNotOrderedDetail = trc(context, 'chk_not_ordered_detail');
+    final tNotOrderedRule = trc(context, 'chk_not_ordered_rule');
+    final tNotOrderedRec = trc(context, 'chk_not_ordered_rec');
+    final tNatDay = trc(context, 'chk_nat_day');
+    final tNatDayDetail = trc(context, 'chk_nat_day_detail');
+    final tNatDayRule = trc(context, 'chk_nat_day_rule');
+    final tNatDayRec = trc(context, 'chk_nat_day_rec');
+    final tNoSpeeches = trc(context, 'chk_no_speeches');
+    final tNoSpeechesDetail = trc(context, 'chk_no_speeches_detail');
+    final tNoSpeechesRule = trc(context, 'chk_no_speeches_rule');
+    final tNoSpeechesRec = trc(context, 'chk_no_speeches_rec');
+    final tChecklist = trc(context, 'chk_checklist');
+    final tChecklistDetail = trc(context, 'chk_checklist_detail');
+    final tChecklistRule = trc(context, 'chk_checklist_rule');
+    final tChecklistRec = trc(context, 'chk_checklist_rec');
     final e = await Repo.i.eventById(widget.eventId);
-    if (e == null) return;
+    // Deleted event used to leave the loading spinner forever.
+    if (e == null) {
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
+    try {
     final guests = await Repo.i.eventGuests(widget.eventId);
     final program = await Repo.i.eventProgram(widget.eventId);
     final checklist = await Repo.i.checklist(widget.eventId);
@@ -1557,12 +1969,12 @@ class _CheckerPageState extends State<CheckerPage> {
     if (program.isEmpty) {
       issues.add(_Issue(
         'خطأ',
-        'لا يوجد برنامج للمناسبة',
-        'المناسبة بلا أي فقرات في برنامجها.',
-        'برنامج الزيارة أو المناسبة عنصر أساسي في التحضير البروتوكولي.',
+        tNoProgram,
+        tNoProgramDetail,
+        tNoProgramRule,
         visitsSrc,
         '',
-        'أضف فقرات البرنامج من صفحة المناسبة: الاستقبال، الاجتماعات، الفعاليات، المغادرة.',
+        tNoProgramRec,
       ));
     }
     // 2. Program without a reception item.
@@ -1570,12 +1982,12 @@ class _CheckerPageState extends State<CheckerPage> {
         !program.any((p) => ((p['title'] ?? '') as String).contains('استقبال'))) {
       issues.add(_Issue(
         'تنبيه',
-        'البرنامج بلا فقرة استقبال',
-        'لم نعثر على فقرة استقبال في البرنامج.',
-        'مراسم الاستقبال أول عناصر برنامج أي وفد رسمي.',
+        tNoReception,
+        tNoReceptionDetail,
+        tNoReceptionRule,
         receptionSrc,
         '',
-        'أضف فقرة «استقبال الوفد» في بداية البرنامج مع المكان والوقت.',
+        tNoReceptionRec,
       ));
     }
     // 3. Guests without a rank/title.
@@ -1585,12 +1997,13 @@ class _CheckerPageState extends State<CheckerPage> {
     if (noRank.isNotEmpty) {
       issues.add(_Issue(
         'خطأ',
-        'ضيوف بلا فئة أسبقية',
-        '${noRank.length} من الضيوف بلا فئة منصب محددة، فلا يمكن ترتيبهم.',
-        'تحديد فئة كل ضيف شرط لترتيب الأسبقية والجلوس.',
+        tNoRank,
+        tNoRankDetail
+            .replaceFirst('{n}', '${noRank.length}'),
+        tNoRankRule,
         titlesSrc,
         '',
-        'حدد فئة المنصب لكل ضيف من قائمة الضيوف.',
+        tNoRankRec,
       ));
     }
     // 4. Guests not in precedence order.
@@ -1605,36 +2018,42 @@ class _CheckerPageState extends State<CheckerPage> {
         }
       }
       if (!inOrder) {
-        issues.add(const _Issue(
+        issues.add(_Issue(
           'خطأ',
-          'قائمة الضيوف ليست مرتبة حسب الأسبقية',
-          'ترتيب الضيوف الحالي يخالف قواعد الأسبقية.',
-          'يتقدم رؤساء البعثات في فئتهم بحسب تاريخ وساعة تولي مهامهم.',
+          tNotOrdered,
+          tNotOrderedDetail,
+          tNotOrderedRule,
           precedenceSrc,
           '',
-          'أعد ترتيب الضيوف حسب الأسبقية (يمكنك استخدام الترتيب التلقائي في مخطط الجلوس).',
+          tNotOrderedRec,
         ));
       }
     }
     // 5. Event date coincides with a guest country's national day.
     final days = await Repo.i.upcomingNationalDays(days: 400);
     final eventDate = e.date;
+    // Guard a short/malformed stored date: substring(5) used to throw.
+    final eventMmdd =
+        eventDate.length >= 10 ? eventDate.substring(5, 10) : '';
     for (final g in guests) {
       final country = (g['country'] ?? '') as String;
-      if (country.isEmpty) continue;
+      if (country.isEmpty || eventMmdd.isEmpty) continue;
       for (final nd in days) {
         if (nd.countryAr != country) continue;
         final mmdd =
             '${nd.nextDate.month.toString().padLeft(2, '0')}-${nd.nextDate.day.toString().padLeft(2, '0')}';
-        if (eventDate.substring(5) == mmdd) {
+        if (eventMmdd == mmdd) {
           issues.add(_Issue(
             'تنبيه',
-            'تاريخ المناسبة يوافق العيد الوطني لدولة ضيف',
-            'يوم ${e.date} يوافق ${nd.name} (${nd.countryAr}).',
-            'مراعاة الأعياد الوطنية للضيوف من قواعد الإتيكيت الدبلوماسي.',
+            tNatDay,
+            tNatDayDetail
+                .replaceFirst('{date}', e.date)
+                .replaceFirst('{name}', nd.name)
+                .replaceFirst('{country}', nd.countryAr),
+            tNatDayRule,
             'موسوعة الدول — مراسم',
             '',
-            'راعِ المناسبة في البرنامج (تهنئة رسمية) أو أعد جدولة التاريخ إن أمكن.',
+            tNatDayRec,
           ));
         }
       }
@@ -1647,12 +2066,12 @@ class _CheckerPageState extends State<CheckerPage> {
             ((p['title'] ?? '') as String).contains('نخب'))) {
       issues.add(_Issue(
         'تنبيه',
-        'مأدبة رسمية بلا فقرة كلمات أو أنخاب',
-        'لا توجد فقرة كلمة أو نخب في برنامج المأدبة.',
-        'الكلمات والأنخاب جزء معتاد من برنامج المآدب الرسمية.',
+        tNoSpeeches,
+        tNoSpeechesDetail,
+        tNoSpeechesRule,
         await _sourceFor('المآدب الرسمية'),
         '',
-        'أضف فقرة «كلمة ترحيبية وأنخاب» إلى البرنامج.',
+        tNoSpeechesRec,
       ));
     }
     // 7. Incomplete checklist.
@@ -1660,12 +2079,14 @@ class _CheckerPageState extends State<CheckerPage> {
     if (checklist.isNotEmpty && undone > 0) {
       issues.add(_Issue(
         'تنبيه',
-        'قائمة التحقق غير مكتملة',
-        'بقي $undone من ${checklist.length} بنود غير منجزة.',
-        'استكمال قائمة التحقق قبل المناسبة من أساسيات التنظيم.',
+        tChecklist,
+        tChecklistDetail
+            .replaceFirst('{n}', '$undone')
+            .replaceFirst('{total}', '${checklist.length}'),
+        tChecklistRule,
         'قوائم التحقق — مراسم',
         '',
-        'راجع قائمة التحقق من صفحة المناسبة وأكمل البنود المتبقية.',
+        tChecklistRec,
       ));
     }
 
@@ -1676,19 +2097,27 @@ class _CheckerPageState extends State<CheckerPage> {
       _clean = issues.isEmpty;
       _loading = false;
     });
+    } catch (_) {
+      // A DB failure used to leave the loading spinner forever.
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('نتيجة التدقيق')),
+      appBar: AppBar(title: Text(trc(context, 'checker_result'))),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : _clean
-              ? const EmptyState(
-                  icon: Icons.check_circle,
-                  text: 'لا توجد مشاكل.\nخطة المناسبة سليمة وفق القواعد التي تم فحصها.')
-              : ListView.builder(
+          : _event == null
+              ? EmptyState(
+                  icon: Icons.event_busy,
+                  text: trc(context, 'checker_not_found'))
+              : _clean
+                  ? EmptyState(
+                      icon: Icons.check_circle,
+                      text: trc(context, 'checker_clean'))
+                  : ListView.builder(
                   padding: const EdgeInsets.all(12),
                   itemCount: _issues.length + 1,
                   itemBuilder: (ctx, i) {
@@ -1696,7 +2125,9 @@ class _CheckerPageState extends State<CheckerPage> {
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 10),
                         child: Text(
-                            'تم العثور على ${_issues.length} ملاحظات في خطة «${_event?.title ?? ''}»:',
+                            trc(context, 'checker_found')
+                                .replaceFirst('{n}', '${_issues.length}')
+                                .replaceFirst('{name}', _event?.title ?? ''),
                             style: const TextStyle(
                                 fontWeight: FontWeight.bold, fontSize: 16)),
                       );
@@ -1727,7 +2158,10 @@ class _CheckerPageState extends State<CheckerPage> {
                                           fontSize: 15)),
                                 ),
                                 Chip(
-                                  label: Text(iss.severity,
+                                  label: Text(trc(context,
+                                      iss.severity == 'خطأ'
+                                          ? 'sev_error'
+                                          : 'sev_warning'),
                                       style: const TextStyle(fontSize: 11)),
                                   backgroundColor: isError
                                       ? const Color(0xFFFDE8E8)
@@ -1739,14 +2173,14 @@ class _CheckerPageState extends State<CheckerPage> {
                             Text(iss.detail,
                                 style: const TextStyle(height: 1.7)),
                             const SizedBox(height: 6),
-                            Text('القاعدة: ${iss.rule}',
-                                style: const TextStyle(
-                                    height: 1.7, color: AppColors.stone)),
-                            Text('المصدر: ${iss.sourceName}',
-                                style: const TextStyle(
-                                    fontSize: 12, color: AppColors.stone)),
+                            Text('${trc(context, 'chk_rule_prefix')} ${iss.rule}',
+                                style: TextStyle(
+                                    height: 1.7, color: context.mutedColor)),
+                            Text('${trc(context, 'chk_source_prefix')} ${iss.sourceName}',
+                                style: TextStyle(
+                                    fontSize: 12, color: context.mutedColor)),
                             const SizedBox(height: 6),
-                            Text('التوصية: ${iss.recommendation}',
+                            Text('${trc(context, 'chk_rec_prefix')} ${iss.recommendation}',
                                 style: const TextStyle(
                                     height: 1.7,
                                     fontWeight: FontWeight.w600)),

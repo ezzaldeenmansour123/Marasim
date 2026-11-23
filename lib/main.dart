@@ -2,6 +2,7 @@ import 'package:flutter_localizations/flutter_localizations.dart'
     hide GlobalMaterialLocalizations;
 import 'package:material_ui/material_ui.dart';
 import 'package:provider/provider.dart';
+import 'app_state.dart';
 import 'assistant.dart';
 import 'db.dart';
 import 'encyclopedia.dart';
@@ -9,85 +10,6 @@ import 'library.dart';
 import 'notifications.dart';
 import 'tools.dart';
 import 'widgets.dart';
-
-// ── App state (language, font size, notifications, optional API key) ──
-class AppState extends ChangeNotifier {
-  String language = 'ar';
-  double fontScale = 1.0;
-  bool notifDays = true;
-  bool notifEvents = true;
-  String apiKey = '';
-
-  Future<void> load() async {
-    language = await Repo.i.getSetting('language', 'ar');
-    fontScale =
-        double.tryParse(await Repo.i.getSetting('font_scale', '1.0')) ?? 1.0;
-    notifDays = (await Repo.i.getSetting('notif_days', '1')) == '1';
-    notifEvents = (await Repo.i.getSetting('notif_events', '1')) == '1';
-    apiKey = await Repo.i.getSetting('api_key', '');
-    notifyListeners();
-  }
-
-  Future<void> setLanguage(String v) async {
-    language = v;
-    await Repo.i.setSetting('language', v);
-    notifyListeners();
-  }
-
-  Future<void> setFontScale(double v) async {
-    fontScale = v.clamp(0.9, 1.3);
-    await Repo.i.setSetting('font_scale', fontScale.toStringAsFixed(2));
-    notifyListeners();
-  }
-
-  Future<void> setNotifDays(bool v) async {
-    notifDays = v;
-    await Repo.i.setSetting('notif_days', v ? '1' : '0');
-    notifyListeners();
-  }
-
-  Future<void> setNotifEvents(bool v) async {
-    notifEvents = v;
-    await Repo.i.setSetting('notif_events', v ? '1' : '0');
-    notifyListeners();
-  }
-
-  Future<void> setApiKey(String v) async {
-    apiKey = v.trim();
-    await Repo.i.setSetting('api_key', apiKey);
-    notifyListeners();
-  }
-}
-
-const _strings = {
-  'home': {'ar': 'الرئيسية', 'en': 'Home'},
-  'library': {'ar': 'المكتبة', 'en': 'Library'},
-  'tools': {'ar': 'الأدوات', 'en': 'Tools'},
-  'more': {'ar': 'المزيد', 'en': 'More'},
-  'assistant': {'ar': 'المساعد الذكي', 'en': 'AI Assistant'},
-  'search_hint': {
-    'ar': 'ابحث في البروتوكول والدول والنماذج...',
-    'en': 'Search protocol, countries, templates...'
-  },
-  'protocol': {'ar': 'البروتوكول الدبلوماسي', 'en': 'Diplomatic Protocol'},
-  'ceremonies': {'ar': 'المراسم الرسمية', 'en': 'Official Ceremonies'},
-  'flags': {'ar': 'الأعلام والرموز', 'en': 'Flags & Symbols'},
-  'precedence': {'ar': 'الأسبقية والألقاب', 'en': 'Precedence & Titles'},
-  'etiquette': {'ar': 'الإتيكيت الدولي', 'en': 'International Etiquette'},
-  'events': {'ar': 'إدارة المناسبات', 'en': 'Event Management'},
-  'countries': {'ar': 'موسوعة الدول', 'en': 'Countries Encyclopedia'},
-  'latest': {'ar': 'أحدث المقالات', 'en': 'Latest Articles'},
-  'upcoming': {'ar': 'المناسبات الوطنية القادمة', 'en': 'Upcoming National Days'},
-  'favorites': {'ar': 'المفضلة', 'en': 'Favorites'},
-  'settings': {'ar': 'الإعدادات', 'en': 'Settings'},
-  'about': {'ar': 'عن مراسم', 'en': 'About MARASIM'},
-};
-
-String tr(AppState s, String key) {
-  final m = _strings[key];
-  if (m == null) return key;
-  return m[s.language] ?? m['ar']!;
-}
 
 Future<void> scheduleNationalDayReminders() async {
   final days = await Repo.i.upcomingNationalDays(days: 60);
@@ -131,6 +53,8 @@ class MarasimApp extends StatelessWidget {
           GlobalWidgetsLocalizations.delegate,
         ],
         theme: AppTheme.light(state.fontScale),
+        darkTheme: AppTheme.dark(state.fontScale),
+        themeMode: state.darkMode ? ThemeMode.dark : ThemeMode.light,
         home: const SplashPage(),
       ),
     );
@@ -144,10 +68,16 @@ class SplashPage extends StatefulWidget {
   State<SplashPage> createState() => _SplashPageState();
 }
 
-class _SplashPageState extends State<SplashPage> {
+class _SplashPageState extends State<SplashPage>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _zoom;
+
   @override
   void initState() {
     super.initState();
+    _zoom = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 2600))
+      ..forward();
     Future.delayed(const Duration(milliseconds: 2200), () {
       if (mounted) {
         Navigator.pushReplacement(
@@ -157,32 +87,54 @@ class _SplashPageState extends State<SplashPage> {
   }
 
   @override
+  void dispose() {
+    _zoom.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.navy,
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Image.asset('assets/logo.png',
-                width: 220,
-                height: 220,
-                errorBuilder: (c, e, st) => const Icon(Icons.public,
-                    color: AppColors.gold, size: 120)),
-            const SizedBox(height: 8),
-            const Text('MARASIM',
-                style: TextStyle(
-                    color: AppColors.gold,
-                    fontSize: 34,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 6)),
-            const SizedBox(height: 4),
-            const Text('International Protocol & Ceremonial Guide',
-                style: TextStyle(color: Colors.white70, fontSize: 13)),
-            const SizedBox(height: 40),
-            const CircularProgressIndicator(color: AppColors.gold),
-          ],
-        ),
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Subtle animated photo backdrop: slow Ken Burns zoom.
+          ScaleTransition(
+            scale: Tween<double>(begin: 1.0, end: 1.12).animate(
+                CurvedAnimation(parent: _zoom, curve: Curves.easeOut)),
+            child: Image.asset('assets/images/hero1.jpg',
+                fit: BoxFit.cover,
+                errorBuilder: (c, e, st) =>
+                    Container(color: AppColors.navy)),
+          ),
+          Container(color: AppColors.navy.withValues(alpha: 0.82)),
+          Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Image.asset('assets/logo.png',
+                    width: 220,
+                    height: 220,
+                    errorBuilder: (c, e, st) => const Icon(Icons.public,
+                        color: AppColors.gold, size: 120)),
+                const SizedBox(height: 8),
+                const Text('MARASIM',
+                    style: TextStyle(
+                        fontFamily: 'Amiri',
+                        color: AppColors.gold,
+                        fontSize: 34,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 6)),
+                const SizedBox(height: 4),
+                const Text('International Protocol & Ceremonial Guide',
+                    style: TextStyle(color: Colors.white70, fontSize: 13)),
+                const SizedBox(height: 40),
+                const CircularProgressIndicator(color: AppColors.gold),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -298,38 +250,40 @@ class _HomeTabState extends State<HomeTab> {
           ),
         ],
       ),
-      body: RefreshIndicator(
-        onRefresh: _load,
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const HeroCarousel(),
-              const SizedBox(height: 12),
-              InkWell(
-                onTap: () => Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => const SearchPage())),
-                borderRadius: BorderRadius.circular(12),
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          const AnimatedBackground(),
+          RefreshIndicator(
+            onRefresh: _load,
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  InkWell(
+                    onTap: () => Navigator.push(context,
+                        MaterialPageRoute(builder: (_) => const SearchPage())),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.cardBorder),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 13),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).cardColor,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.cardBorder),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.search, color: AppColors.stone),
+                          const SizedBox(width: 8),
+                          Text(tr(state, 'search_hint'),
+                              style: const TextStyle(color: AppColors.stone)),
+                        ],
+                      ),
+                    ),
                   ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.search, color: AppColors.stone),
-                      const SizedBox(width: 8),
-                      Text(tr(state, 'search_hint'),
-                          style: const TextStyle(color: AppColors.stone)),
-                    ],
-                  ),
-                ),
-              ),
               const SizedBox(height: 14),
               // AI assistant banner
               InkWell(
@@ -360,9 +314,9 @@ class _HomeTabState extends State<HomeTab> {
                                     color: Colors.white,
                                     fontWeight: FontWeight.bold,
                                     fontSize: 17)),
-                            const Text(
-                                'اسأل عن أي قاعدة بروتوكولية — إجابات موثقة بالمصادر، دون إنترنت',
-                                style: TextStyle(
+                            Text(
+                                tr(state, 'assistant_desc'),
+                                style: const TextStyle(
                                     color: Colors.white70, fontSize: 12.5)),
                           ],
                         ),
@@ -439,7 +393,7 @@ class _HomeTabState extends State<HomeTab> {
                   leading: const Icon(Icons.public, color: AppColors.navy),
                   title: Text(tr(state, 'countries'),
                       style: const TextStyle(fontWeight: FontWeight.bold)),
-                  subtitle: const Text('معلومات الدول وبروتوكولها المحلي'),
+                  subtitle: Text(tr(state, 'countries_sub')),
                   trailing: const Icon(Icons.arrow_back_ios, size: 14),
                   onTap: () => Navigator.push(context,
                       MaterialPageRoute(builder: (_) => const CountriesPage())),
@@ -473,11 +427,11 @@ class _HomeTabState extends State<HomeTab> {
               SectionHeader(title: tr(state, 'upcoming')),
               const SizedBox(height: 6),
               if (_upcoming.isEmpty)
-                const Card(
+                Card(
                   child: Padding(
-                    padding: EdgeInsets.all(14),
-                    child: Text('لا توجد أعياد وطنية خلال الثلاثين يومًا القادمة.',
-                        style: TextStyle(color: AppColors.stone)),
+                    padding: const EdgeInsets.all(14),
+                    child: Text(tr(state, 'no_national_days'),
+                        style: const TextStyle(color: AppColors.stone)),
                   ),
                 )
               else
@@ -494,6 +448,8 @@ class _HomeTabState extends State<HomeTab> {
             ],
           ),
         ),
+      ),
+        ],
       ),
     );
   }
@@ -543,6 +499,7 @@ class _SearchPageState extends State<SearchPage> {
 
   @override
   Widget build(BuildContext context) {
+    final state = Provider.of<AppState>(context);
     return DefaultTabController(
       length: 3,
       child: Scaffold(
@@ -551,19 +508,19 @@ class _SearchPageState extends State<SearchPage> {
             controller: _ctrl,
             autofocus: true,
             style: const TextStyle(color: Colors.white),
-            decoration: const InputDecoration(
-              hintText: 'ابحث...',
-              hintStyle: TextStyle(color: Colors.white70),
+            decoration: InputDecoration(
+              hintText: tr(state, 'search'),
+              hintStyle: const TextStyle(color: Colors.white70),
               border: InputBorder.none,
-              prefixIcon: Icon(Icons.search, color: Colors.white),
+              prefixIcon: const Icon(Icons.search, color: Colors.white),
             ),
             onChanged: _search,
           ),
-          bottom: const TabBar(
+          bottom: TabBar(
             tabs: [
-              Tab(text: 'المقالات'),
-              Tab(text: 'الدول'),
-              Tab(text: 'النماذج'),
+              Tab(text: tr(state, 'tab_articles')),
+              Tab(text: tr(state, 'tab_countries')),
+              Tab(text: tr(state, 'tab_templates')),
             ],
           ),
         ),
@@ -622,12 +579,12 @@ class _SearchPageState extends State<SearchPage> {
 
   Widget _resultsList<T>(List<T> items, Widget Function(T) tile) {
     if (!_searched) {
-      return const EmptyState(
-          icon: Icons.search, text: 'اكتب كلمة للبحث في المقالات والدول والنماذج.');
+      return EmptyState(
+          icon: Icons.search, text: trc(context, 'search_empty_hint'));
     }
     if (items.isEmpty) {
-      return const EmptyState(
-          icon: Icons.search_off, text: 'لا توجد نتائج مطابقة.');
+      return EmptyState(
+          icon: Icons.search_off, text: trc(context, 'search_no_results'));
     }
     return ListView.builder(
       padding: const EdgeInsets.all(8),
@@ -651,23 +608,32 @@ class MorePage extends StatelessWidget {
     ];
     return Scaffold(
       appBar: AppBar(title: Text(tr(state, 'more'))),
-      body: ListView.builder(
+      body: ListView(
         padding: const EdgeInsets.all(12),
-        itemCount: items.length,
-        itemBuilder: (ctx, i) {
-          final it = items[i];
-          return Card(
+        children: [
+          Card(
             margin: const EdgeInsets.only(bottom: 8),
-            child: ListTile(
-              leading: Icon(it.$1, color: AppColors.navy),
-              title: Text(it.$2,
+            child: SwitchListTile(
+              secondary: const Icon(Icons.dark_mode, color: AppColors.navy),
+              title: Text(tr(state, 'settings_dark'),
                   style: const TextStyle(fontWeight: FontWeight.bold)),
-              trailing: const Icon(Icons.arrow_back_ios, size: 14),
-              onTap: () => Navigator.push(
-                  context, MaterialPageRoute(builder: (_) => it.$3)),
+              subtitle: Text(tr(state, 'settings_dark_sub')),
+              value: state.darkMode,
+              onChanged: (v) => state.setDarkMode(v),
             ),
-          );
-        },
+          ),
+          ...items.map((it) => Card(
+                margin: const EdgeInsets.only(bottom: 8),
+                child: ListTile(
+                  leading: Icon(it.$1, color: AppColors.navy),
+                  title: Text(it.$2,
+                      style: const TextStyle(fontWeight: FontWeight.bold)),
+                  trailing: const Icon(Icons.arrow_back_ios, size: 14),
+                  onTap: () => Navigator.push(
+                      context, MaterialPageRoute(builder: (_) => it.$3)),
+                ),
+              )),
+        ],
       ),
     );
   }
@@ -704,18 +670,18 @@ class _FavoritesPageState extends State<FavoritesPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('المفضلة')),
+      appBar: AppBar(title: Text(trc(context, 'favorites'))),
       body: (_articles.isEmpty && _countries.isEmpty)
-          ? const EmptyState(
+          ? EmptyState(
               icon: Icons.star_border,
-              text: 'لا توجد عناصر مفضلة بعد.\nاضغط على النجمة في أي مقال أو دولة لحفظها هنا.')
+              text: trc(context, 'favorites_empty'))
           : SingleChildScrollView(
               padding: const EdgeInsets.all(12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   if (_articles.isNotEmpty) ...[
-                    const SectionHeader(title: 'مقالات مفضلة'),
+                    SectionHeader(title: trc(context, 'favorites_articles')),
                     ..._articles.map((a) => Card(
                           child: ListTile(
                             leading: const Icon(Icons.article_outlined,
@@ -733,7 +699,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
                     const SizedBox(height: 12),
                   ],
                   if (_countries.isNotEmpty) ...[
-                    const SectionHeader(title: 'دول مفضلة'),
+                    SectionHeader(title: trc(context, 'favorites_countries')),
                     ..._countries.map((c) => Card(
                           child: ListTile(
                             leading: Text(c.flag,
@@ -783,13 +749,13 @@ class _SettingsPageState extends State<SettingsPage> {
   Widget build(BuildContext context) {
     final state = Provider.of<AppState>(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('الإعدادات')),
+      appBar: AppBar(title: Text(tr(state, 'settings'))),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const SectionHeader(title: 'اللغة / Language'),
+            SectionHeader(title: tr(state, 'settings_language')),
             const SizedBox(height: 8),
             Row(
               children: [
@@ -825,7 +791,7 @@ class _SettingsPageState extends State<SettingsPage> {
               ],
             ),
             const SizedBox(height: 16),
-            const SectionHeader(title: 'حجم الخط'),
+            SectionHeader(title: tr(state, 'settings_font')),
             Row(
               children: [
                 IconButton(
@@ -856,8 +822,14 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
             const SizedBox(height: 8),
             SwitchListTile(
-              title: const Text('تذكير بالأعياد الوطنية'),
-              subtitle: const Text('إشعار صباحي في يوم العيد الوطني لكل دولة'),
+              title: Text(tr(state, 'settings_dark')),
+              subtitle: Text(tr(state, 'settings_dark_sub')),
+              value: state.darkMode,
+              onChanged: (v) => state.setDarkMode(v),
+            ),
+            SwitchListTile(
+              title: Text(tr(state, 'settings_notif_days')),
+              subtitle: Text(tr(state, 'settings_notif_days_sub')),
               value: state.notifDays,
               onChanged: (v) async {
                 await state.setNotifDays(v);
@@ -865,24 +837,24 @@ class _SettingsPageState extends State<SettingsPage> {
               },
             ),
             SwitchListTile(
-              title: const Text('تذكير بالمناسبات'),
-              subtitle: const Text('إشعار صباح يوم المناسبة'),
+              title: Text(tr(state, 'settings_notif_events')),
+              subtitle: Text(tr(state, 'settings_notif_events_sub')),
               value: state.notifEvents,
               onChanged: (v) => state.setNotifEvents(v),
             ),
             const SizedBox(height: 16),
-            const SectionHeader(title: 'الوضع التوليدي (اختياري)'),
+            SectionHeader(title: tr(state, 'settings_generative')),
             const SizedBox(height: 6),
-            const Text(
-              'المساعد الحالي يعمل دون إنترنت من قاعدة المعرفة الموثوقة. لوضع توليدي متقدم مستقبلًا، يمكنك إضافة مفتاح API هنا — يُحفظ على جهازك فقط ولا يُرسل إلا لخدمة الذكاء الاصطناعي التي تختارها، والتطبيق يعمل كاملًا بدونه.',
-              style: TextStyle(color: AppColors.stone, height: 1.7),
+            Text(
+              tr(state, 'settings_generative_desc'),
+              style: const TextStyle(color: AppColors.stone, height: 1.7),
             ),
             const SizedBox(height: 8),
             TextField(
               controller: _apiCtrl,
               obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'مفتاح API (اختياري)',
+              decoration: InputDecoration(
+                labelText: tr(state, 'settings_api_label'),
                 hintText: 'sk-...',
               ),
             ),
@@ -893,29 +865,28 @@ class _SettingsPageState extends State<SettingsPage> {
                   onPressed: () async {
                     await state.setApiKey(_apiCtrl.text);
                     if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('تم حفظ المفتاح على جهازك')));
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content: Text(tr(state, 'settings_key_saved'))));
                     }
                   },
-                  child: const Text('حفظ المفتاح'),
+                  child: Text(tr(state, 'settings_save_key')),
                 ),
                 const SizedBox(width: 8),
                 OutlinedButton(
                   onPressed: () async {
                     await scheduleNationalDayReminders();
                     if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                              content: Text('تمت إعادة جدولة التذكيرات')));
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content: Text(tr(state, 'settings_rescheduled'))));
                     }
                   },
-                  child: const Text('إعادة جدولة التذكيرات'),
+                  child: Text(tr(state, 'settings_reschedule')),
                 ),
               ],
             ),
             const SizedBox(height: 16),
-            const Text('مراسم | MARASIM — الإصدار 1.0.0',
-                style: TextStyle(color: AppColors.stone)),
+            Text('مراسم | MARASIM — ${tr(state, 'version')} $appVersion',
+                style: const TextStyle(color: AppColors.stone)),
           ],
         ),
       ),
@@ -929,7 +900,7 @@ class AboutPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('عن مراسم | About MARASIM')),
+      appBar: AppBar(title: Text(trc(context, 'about_title'))),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -941,52 +912,53 @@ class AboutPage extends StatelessWidget {
                 errorBuilder: (c, e, st) => const Icon(Icons.public,
                     color: AppColors.gold, size: 90)),
             const SizedBox(height: 12),
-            const Text('مراسم | MARASIM',
+            Text('مراسم | MARASIM',
                 style: TextStyle(
+                    fontFamily: 'Amiri',
                     fontSize: 26,
                     fontWeight: FontWeight.bold,
-                    color: AppColors.navy)),
+                    color: context.headingColor)),
             const Text('International Protocol & Ceremonial Intelligence Platform',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: AppColors.stone)),
             const SizedBox(height: 20),
-            const Text(
-              'منصة رقمية متخصصة في المعرفة الدبلوماسية والمراسم الدولية: دليل بروتوكول موثوق بمصادره، وموسوعة للدول، ومساعد ذكي يعمل دون إنترنت، وأدوات تنفيذية لتنظيم المناسبات والزيارات الرسمية.',
+            Text(
+              trc(context, 'about_desc'),
               textAlign: TextAlign.center,
-              style: TextStyle(height: 1.9, fontSize: 15),
+              style: const TextStyle(height: 1.9, fontSize: 15),
             ),
             const SizedBox(height: 20),
-            const Card(
+            Card(
               child: Padding(
-                padding: EdgeInsets.all(16),
+                padding: const EdgeInsets.all(16),
                 child: Column(
                   children: [
-                    Text('Founder & Developer',
-                        style: TextStyle(
+                    Text(trc(context, 'founder_dev'),
+                        style: const TextStyle(
                             color: AppColors.stone, letterSpacing: 1)),
-                    SizedBox(height: 8),
-                    Text('Ezzaldeen Mansour',
+                    const SizedBox(height: 8),
+                    const Text('Ezzaldeen Mansour',
                         style: TextStyle(
                             fontSize: 20, fontWeight: FontWeight.bold)),
-                    Text('عز الدين منصور',
+                    const Text('عز الدين منصور',
                         style: TextStyle(
                             fontSize: 18, fontWeight: FontWeight.bold)),
-                    SizedBox(height: 4),
-                    Text('Founder of MARASIM',
-                        style: TextStyle(color: AppColors.gold)),
+                    const SizedBox(height: 4),
+                    Text(trc(context, 'founder_of'),
+                        style: const TextStyle(color: AppColors.gold)),
                   ],
                 ),
               ),
             ),
             const SizedBox(height: 20),
-            const Text(
-              'هذا التطبيق مرجع معرفي وأداة تنظيمية؛ وليس جهة حكومية ولا منظمة دولية معتمدة. القواعد المنسوبة إلى اتفاقيات دولية مذكورة بمصادرها، وما عداها ممارسات وأعراف موضحة بصفتها.',
+            Text(
+              trc(context, 'about_disclaimer'),
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12, color: AppColors.stone, height: 1.7),
+              style: const TextStyle(fontSize: 12, color: AppColors.stone, height: 1.7),
             ),
             const SizedBox(height: 8),
-            const Text('الإصدار 1.0.0',
-                style: TextStyle(color: AppColors.stone)),
+            Text('${trc(context, 'version')} $appVersion',
+                style: const TextStyle(color: AppColors.stone)),
           ],
         ),
       ),

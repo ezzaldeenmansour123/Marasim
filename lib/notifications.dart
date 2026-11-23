@@ -15,19 +15,27 @@ class NotificationService {
       final tzInfo = await FlutterTimezone.getLocalTimezone();
       tz.setLocalLocation(tz.getLocation(tzInfo.identifier));
     } catch (_) {}
-    await _plugin.initialize(
-      settings: const InitializationSettings(
-        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
-      ),
-    );
+    try {
+      await _plugin.initialize(
+        settings: const InitializationSettings(
+          android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+        ),
+      );
+    } catch (_) {
+      // Plugin init failure must not crash app startup; reminders simply
+      // stay off (schedule/cancel no-op while !_ready).
+      return;
+    }
     _ready = true;
   }
 
   static Future<void> requestPermissions() async {
-    final android = _plugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
-    await android?.requestNotificationsPermission();
-    await android?.requestExactAlarmsPermission();
+    try {
+      final android = _plugin.resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
+      await android?.requestNotificationsPermission();
+      await android?.requestExactAlarmsPermission();
+    } catch (_) {}
   }
 
   /// Schedules a one-off reminder at [when] (local time).
@@ -41,32 +49,41 @@ class NotificationService {
     if (!_ready) return;
     final scheduled = tz.TZDateTime.from(when, tz.local);
     if (scheduled.isBefore(tz.TZDateTime.now(tz.local))) return;
-    await _plugin.zonedSchedule(
-      id: id,
-      title: title,
-      body: body,
-      scheduledDate: scheduled,
-      notificationDetails: const NotificationDetails(
-        android: AndroidNotificationDetails(
-          'marasim_reminders',
-          'تذكيرات مراسم',
-          channelDescription: 'تذكير بالمناسبات الوطنية والزيارات والاجتماعات',
-          importance: Importance.high,
-          priority: Priority.high,
+    // Best-effort: a denied exact-alarm permission (or any plugin error)
+    // used to throw into the caller and break event creation.
+    try {
+      await _plugin.zonedSchedule(
+        id: id,
+        title: title,
+        body: body,
+        scheduledDate: scheduled,
+        notificationDetails: const NotificationDetails(
+          android: AndroidNotificationDetails(
+            'marasim_reminders',
+            'تذكيرات مراسم | MARASIM Reminders',
+            channelDescription:
+                'تذكير بالمناسبات الوطنية والزيارات والاجتماعات — Reminders for national days, visits, and meetings',
+            importance: Importance.high,
+            priority: Priority.high,
+          ),
         ),
-      ),
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      payload: payload,
-    );
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        payload: payload,
+      );
+    } catch (_) {}
   }
 
   static Future<void> cancel(int id) async {
     if (!_ready) return;
-    await _plugin.cancel(id: id);
+    try {
+      await _plugin.cancel(id: id);
+    } catch (_) {}
   }
 
   static Future<void> cancelAll() async {
     if (!_ready) return;
-    await _plugin.cancelAll();
+    try {
+      await _plugin.cancelAll();
+    } catch (_) {}
   }
 }

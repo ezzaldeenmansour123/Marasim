@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:share_plus/share_plus.dart';
+import 'app_state.dart';
 import 'db.dart';
 import 'encyclopedia.dart';
 import 'tools.dart';
@@ -43,14 +44,16 @@ const _chips = [
 class _AssistantPageState extends State<AssistantPage> {
   final _controller = TextEditingController();
   final _scroll = ScrollController();
-  final List<_Msg> _msgs = [
-    const _Msg(
-      user: false,
-      text:
-          'مرحبًا، أنا مساعد مراسم الذكي. أسألني عن أي قاعدة بروتوكولية، وسأجيبك من قاعدة المعرفة الموثوقة مع ذكر المصدر. أعمل دون إنترنت.',
-    ),
-  ];
+  late final List<_Msg> _msgs;
   bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _msgs = [
+      _Msg(user: false, text: trc(context, 'assistant_welcome')),
+    ];
+  }
 
   Future<void> _ask(String query) async {
     final q = query.trim();
@@ -61,28 +64,38 @@ class _AssistantPageState extends State<AssistantPage> {
     });
     _controller.clear();
     _scrollToEnd();
-    final results = await Repo.i.searchArticles(q, limit: 6);
-    if (!mounted) return;
-    if (results.isEmpty) {
+    try {
+      final results = await Repo.i.searchArticles(q, limit: 6);
+      if (!mounted) return;
+      if (results.isEmpty) {
+        setState(() {
+          _msgs.add(_Msg(
+            user: false,
+            text: trc(context, 'assistant_no_info').replaceFirst('{q}', q),
+            noInfo: true,
+          ));
+        });
+      } else {
+        setState(() {
+          _msgs.add(_Msg(
+            user: false,
+            text: trc(context, 'assistant_answer_intro'),
+            top: results.first,
+            related: results.length > 1 ? results.sublist(1) : const [],
+          ));
+        });
+      }
+    } catch (_) {
+      if (!mounted) return;
       setState(() {
         _msgs.add(_Msg(
           user: false,
-          text:
-              'لا توجد معلومة موثوقة في قاعدة المعرفة حول «$q». لا أستطيع الإجابة من دون مصدر موثوق — جرّب صياغة أخرى، أو تصفّح دليل البروتوكول، أو اسأل عن موضوع ذي صلة.',
+          text: trc(context, 'assistant_search_error'),
           noInfo: true,
         ));
-        _busy = false;
       });
-    } else {
-      setState(() {
-        _msgs.add(_Msg(
-          user: false,
-          text: 'إليك الإجابة من قاعدة المعرفة:',
-          top: results.first,
-          related: results.length > 1 ? results.sublist(1) : const [],
-        ));
-        _busy = false;
-      });
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
     _scrollToEnd();
   }
@@ -107,20 +120,19 @@ class _AssistantPageState extends State<AssistantPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('المساعد الذكي'),
+        title: Text(trc(context, 'assistant')),
         actions: [
           IconButton(
             icon: const Icon(Icons.info_outline),
             onPressed: () => showDialog<void>(
               context: context,
               builder: (ctx) => AlertDialog(
-                title: const Text('كيف يعمل المساعد؟'),
-                content: const Text(
-                    'المساعد يبحث فقط في قاعدة المعرفة الموثوقة داخل التطبيق، ويذكر مصدر كل إجابة وتاريخ مراجعتها. لا يخترع قواعد أو ألقابًا أو مراتب أسبقية. إن لم تتوفر معلومة موثوقة يقول ذلك بوضوح. يعمل دون إنترنت. يمكن إضافة مفتاح API اختياري من الإعدادات لوضع توليدي مستقبلي — والتطبيق يعمل كاملًا بدونه.'),
+                title: Text(trc(context, 'assistant_how_title')),
+                content: Text(trc(context, 'assistant_how_body')),
                 actions: [
                   TextButton(
                       onPressed: () => Navigator.pop(ctx),
-                      child: const Text('فهمت')),
+                      child: Text(trc(context, 'assistant_understood'))),
                 ],
               ),
             ),
@@ -138,24 +150,24 @@ class _AssistantPageState extends State<AssistantPage> {
             ),
           ),
           if (_busy)
-            const Padding(
-              padding: EdgeInsets.only(bottom: 6),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  SizedBox(
+                  const SizedBox(
                       width: 16,
                       height: 16,
                       child: CircularProgressIndicator(strokeWidth: 2)),
-                  SizedBox(width: 8),
-                  Text('أبحث في قاعدة المعرفة...',
-                      style: TextStyle(color: AppColors.stone)),
+                  const SizedBox(width: 8),
+                  Text(trc(context, 'assistant_searching'),
+                      style: TextStyle(color: context.mutedColor)),
                 ],
               ),
             ),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            color: Colors.white,
+            color: Theme.of(context).cardColor,
             child: Column(
               children: [
                 SingleChildScrollView(
@@ -176,14 +188,14 @@ class _AssistantPageState extends State<AssistantPage> {
                   children: [
                     IconButton(
                       icon: const Icon(Icons.description_outlined,
-                          color: AppColors.navy),
-                      tooltip: 'صياغة مستند',
+                          color: AppColors.gold),
+                      tooltip: trc(context, 'assistant_draft'),
                       onPressed: () => _showDraftSheet(),
                     ),
                     IconButton(
                       icon: const Icon(Icons.fact_check_outlined,
-                          color: AppColors.navy),
-                      tooltip: 'مراجعة خطة مناسبة',
+                          color: AppColors.gold),
+                      tooltip: trc(context, 'assistant_check_plan'),
                       onPressed: () => Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -193,27 +205,28 @@ class _AssistantPageState extends State<AssistantPage> {
                     Expanded(
                       child: TextField(
                         controller: _controller,
-                        decoration: const InputDecoration(
-                          hintText: 'اكتب سؤالك هنا...',
+                        decoration: InputDecoration(
+                          hintText: trc(context, 'assistant_write_question'),
                           border: InputBorder.none,
                         ),
                         onSubmitted: _ask,
                       ),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.send, color: AppColors.navy),
+                      icon: const Icon(Icons.send, color: AppColors.gold),
                       onPressed: () => _ask(_controller.text),
                     ),
                   ],
                 ),
-                const Row(
+                Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(Icons.shield_outlined,
-                        size: 14, color: AppColors.stone),
-                    SizedBox(width: 4),
-                    Text('يعمل دون إنترنت — إجابات موثقة بالمصادر',
-                        style: TextStyle(fontSize: 11, color: AppColors.stone)),
+                        size: 14, color: context.mutedColor),
+                    const SizedBox(width: 4),
+                    Text(trc(context, 'assistant_offline_note'),
+                        style: TextStyle(
+                            fontSize: 11, color: context.mutedColor)),
                   ],
                 ),
                 const SizedBox(height: 4),
@@ -237,17 +250,17 @@ class _AssistantPageState extends State<AssistantPage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('صياغة مستند',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              Text(trc(context, 'assistant_draft'),
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               const SizedBox(height: 4),
-              const Text('اختر النموذج، واملأ الحقول، وسيُصاغ المستند من القالب المعتمد.',
-                  style: TextStyle(color: AppColors.stone)),
+              Text(trc(context, 'assistant_draft_sub'),
+                  style: TextStyle(color: context.mutedColor)),
               const SizedBox(height: 12),
               ...[
-                ('invitation', 'دعوة رسمية'),
-                ('visit_program', 'برنامج زيارة رسمية'),
-                ('meeting_agenda', 'جدول اجتماع'),
-                ('event_checklist', 'قائمة تحقق لمناسبة'),
+                ('invitation', trc(context, 'draft_invitation')),
+                ('visit_program', trc(context, 'draft_visit_program')),
+                ('meeting_agenda', trc(context, 'draft_meeting_agenda')),
+                ('event_checklist', trc(context, 'draft_event_checklist')),
               ].map((t) => ListTile(
                     leading: const Icon(Icons.description, color: AppColors.navy),
                     title: Text(t.$2),
@@ -270,8 +283,10 @@ class _AssistantPageState extends State<AssistantPage> {
 
   Widget _bubble(_Msg m) {
     final align = m.user ? Alignment.centerLeft : Alignment.centerRight;
-    final color = m.user ? AppColors.navy : Colors.white;
-    final textColor = m.user ? Colors.white : const Color(0xFF1F2937);
+    final color = m.user ? AppColors.navy : Theme.of(context).cardColor;
+    final textColor =
+        m.user ? Colors.white : context.bodyColor;
+    final linkColor = context.isDark ? AppColors.gold : AppColors.navy;
     return Align(
       alignment: align,
       child: Container(
@@ -282,7 +297,9 @@ class _AssistantPageState extends State<AssistantPage> {
         decoration: BoxDecoration(
           color: color,
           borderRadius: BorderRadius.circular(14),
-          border: m.user ? null : Border.all(color: AppColors.cardBorder),
+          border: m.user
+              ? null
+              : Border.all(color: context.cardBorderColor),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -292,6 +309,7 @@ class _AssistantPageState extends State<AssistantPage> {
               const SizedBox(height: 8),
               Text(m.top!.title,
                   style: TextStyle(
+                      fontFamily: 'Amiri',
                       color: textColor,
                       fontWeight: FontWeight.bold,
                       fontSize: 15)),
@@ -308,8 +326,11 @@ class _AssistantPageState extends State<AssistantPage> {
               ),
               if (m.related.isNotEmpty) ...[
                 const SizedBox(height: 10),
-                const Text('مواضيع ذات صلة:',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                Text(trc(context, 'assistant_related'),
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: textColor)),
                 ...m.related.map((a) => InkWell(
                       onTap: () => Navigator.push(
                         context,
@@ -320,13 +341,13 @@ class _AssistantPageState extends State<AssistantPage> {
                         padding: const EdgeInsets.symmetric(vertical: 3),
                         child: Row(
                           children: [
-                            const Icon(Icons.article_outlined,
-                                size: 15, color: AppColors.navy),
+                            Icon(Icons.article_outlined,
+                                size: 15, color: linkColor),
                             const SizedBox(width: 6),
                             Expanded(
                                 child: Text(a.title,
-                                    style: const TextStyle(
-                                        color: AppColors.navy, fontSize: 13))),
+                                    style: TextStyle(
+                                        color: linkColor, fontSize: 13))),
                           ],
                         ),
                       ),
@@ -337,7 +358,7 @@ class _AssistantPageState extends State<AssistantPage> {
               const SizedBox(height: 8),
               OutlinedButton.icon(
                 icon: const Icon(Icons.menu_book, size: 16),
-                label: const Text('تصفح دليل البروتوكول'),
+                label: Text(trc(context, 'assistant_browse_guide')),
                 onPressed: () => Navigator.push(
                   context,
                   MaterialPageRoute(
@@ -398,8 +419,10 @@ class _ArticleReaderPageState extends State<ArticleReaderPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(a.title,
-                style:
-                    const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                style: const TextStyle(
+                    fontFamily: 'Amiri',
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
             Text(a.body, style: const TextStyle(fontSize: 16, height: 1.9)),
             const SizedBox(height: 16),
