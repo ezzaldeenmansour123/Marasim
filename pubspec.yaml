@@ -1,7 +1,7 @@
 name: marasim
 description: "مراسم | MARASIM — منصة البروتوكول الدولي والمراسم والذكاء الاصطناعي"
 publish_to: "none"
-version: 1.0.0+1
+version: 1.0.1+2
 
 environment:
   sdk: ">=3.3.0 <4.0.0"
@@ -41,6 +41,13 @@ flutter:
     - assets/images/
     - assets/fonts/
   fonts:
+    # Cairo is the UI font (clean, modern Arabic, OFL). Amiri is kept only
+    # for display headings (splash title, article titles, section headers).
+    - family: Cairo
+      fonts:
+        - asset: assets/fonts/Cairo-Regular.ttf
+        - asset: assets/fonts/Cairo-Bold.ttf
+          weight: 700
     - family: Amiri
       fonts:
         - asset: assets/fonts/Amiri-Regular.ttf
