@@ -175,7 +175,7 @@ def build(seed_dir, out):
         name TEXT, shape TEXT, seats INTEGER, created_at TEXT, updated_at TEXT);
     CREATE TABLE seating_assignments(id INTEGER PRIMARY KEY AUTOINCREMENT,
         plan_id INTEGER, seat_index INTEGER, guest_name TEXT,
-        guest_title TEXT, country TEXT);
+        guest_title TEXT, country TEXT, rank_category TEXT);
     CREATE TABLE settings(key TEXT PRIMARY KEY, value TEXT);
     CREATE VIRTUAL TABLE articles_fts USING fts5(
         title, body, section, tokenize='unicode61 remove_diacritics 0');
