@@ -31,13 +31,46 @@ jobs:
           python3 tools/build_db.py tools/seed assets/marasim.db
           ls -lh assets/marasim.db assets/marasim.db.sha256
 
-      - name: Download Amiri fonts
+      - name: Download Amiri and Cairo fonts
         run: |
           mkdir -p assets/fonts
-          curl -sL -o assets/fonts/Amiri-Regular.ttf \
-            https://github.com/google/fonts/raw/main/ofl/amiri/Amiri-Regular.ttf
-          curl -sL -o assets/fonts/Amiri-Bold.ttf \
-            https://github.com/google/fonts/raw/main/ofl/amiri/Amiri-Bold.ttf
+          # Fonts are committed in assets/fonts/ as a fallback. Fresh
+          # downloads replace them only when they validate as real TTFs,
+          # so a failed download can never break the build with garbage.
+          python3 - <<'PY'
+          import os, subprocess
+          from urllib.request import Request, urlopen
+          def fetch(url, dest):
+              req = Request(url, headers={"User-Agent": "Mozilla/5.0"})
+              with urlopen(req, timeout=30) as resp:
+                  data = resp.read()
+              if len(data) < 20000:
+                  raise ValueError("download too small")
+              open(dest, "wb").write(data)
+              print(f"downloaded {dest} ({len(data)} bytes)")
+          try:
+              fetch("https://github.com/google/fonts/raw/main/ofl/amiri/Amiri-Regular.ttf", "/tmp/Amiri-Regular.ttf")
+              fetch("https://github.com/google/fonts/raw/main/ofl/amiri/Amiri-Bold.ttf", "/tmp/Amiri-Bold.ttf")
+              for f in ("/tmp/Amiri-Regular.ttf", "/tmp/Amiri-Bold.ttf"):
+                  os.replace(f, os.path.join("assets/fonts", os.path.basename(f)))
+              print("Amiri updated")
+          except Exception as exc:
+              print(f"Amiri download failed ({exc}); keeping committed fonts")
+          try:
+              subprocess.run(["pip", "install", "-q", "fonttools"], check=True)
+              fetch("https://github.com/google/fonts/raw/main/ofl/cairo/Cairo%5Bslnt%2Cwght%5D.ttf", "/tmp/Cairo-VF.ttf")
+              for weight, name in ((400, "Cairo-Regular.ttf"), (700, "Cairo-Bold.ttf")):
+                  subprocess.run(["python3", "-m", "fontTools.varLib.instancer",
+                                  "/tmp/Cairo-VF.ttf", f"wght={weight}",
+                                  "-o", f"/tmp/{name}"], check=True)
+                  from fontTools.ttLib import TTFont
+                  t = TTFont(f"/tmp/{name}")
+                  assert t["OS/2"].usWeightClass == weight, f"bad weight in {name}"
+                  os.replace(f"/tmp/{name}", os.path.join("assets/fonts", name))
+                  print(f"Cairo {name} OK (weight {weight})")
+          except Exception as exc:
+              print(f"Cairo refresh failed ({exc}); keeping committed fonts")
+          PY
           ls -lh assets/fonts/
 
       - name: Download hero photos
